@@ -23,17 +23,17 @@ The script loads the HSI model maps for each species and 3 time slices (2020, 20
 <br>
 
 ### 2) threshold maps and nodes per species
-In the previous work (Struebig et al. 15 CurrBiol), binary (0 and 1 values only) threshold maps were calculated for each species, time slice and each of the 4 climatic projections. The four threshold maps for each species and time slice are loaded, and a single majority consensus threshold map created for each species and time slice, i.e. when the sum of the 4 projections was >2, we kept it as suitable area. This area was intersected with the layer of protected areas (PA) to select important PA nodes per species and time slice.
+In the previous work (Struebig et al. 15 CurrBiol), binary (0 and 1 values only) threshold maps were calculated for each species, time slice and each of the 4 climatic projections. The four threshold maps for each species and time slice are loaded, and a single majority consensus threshold map created for each species and time slice, i.e. when the sum of the 4 projections was >2, we kept it as suitable area. This area was intersected with the layer of protected areas (PA) to select important PAs per species and time slice.
 
 <br>
 
 ### 3) circuitscape
-The script creates all folders for the output, the circuitscape initialisation (ini) file and calls the circuitscape.exe. We provide the code also for the new Julia-language version. Circuitscape was run for all species and all nodes per time slice and layers stored.
+The script creates all folders for the output, the circuitscape initialisation (ini) file and calls the circuitscape.exe. We provide the code also for the new Julia-language version. Circuitscape was run for all species and all nodes per time slice and layers stored. The HSI maps were used as conductance layers, and the PAs as nodes.
 
 <br>
 
 ### 4) least cost path
-Nodes per species and time slice are loaded, and per node a centroid was calculated. If nodes had complex shapes and the centroid laid outside the node, we shifted the centroid back into the node at the closest distance. The raster values for the nodes were set to the maximum of the circuitscape conductance layer, so that protected areas are never avoided (highest conductance). This conductance layer was reverted into a resistance layer (transition layer in package `gdistance`) in the least cost path (LCP) analysis. Resulting lines were clipped with the nodes to only further analyse lines outside of PAs. 
+Nodes per species and time slice are loaded, and per node a centroid was calculated. If nodes had complex shapes and the centroid laid outside the node, we shifted the centroid back into the node at the closest distance. The raster values for the nodes were set to the maximum of the circuitscape current flow layer, so that protected areas are never avoided (least cost). This updated current flow layer was reverted into a resistance layer (transition layer in package `gdistance`) in the least cost path (LCP) analysis. Resulting lines were clipped with the nodes to only further analyse lines outside of PAs. 
 
 <br>
 
