@@ -1,0 +1,251 @@
+---
+title: "threshold maps and nodes per species" 
+
+author:
+    - name: "Moritz Wenzler-Meya"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 
+    - name: "Stephanie Kramer-Schadt"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id:
+date: "`r Sys.Date()`"
+output: 
+    distill::distill_article:
+        highlight: kate
+        code_folding: false  
+        toc: true            
+        toc_depth: 2         
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+                      dev = "ragg_png", fig.width = 9, fig.height = 6, dpi = 600, retina = 1)
+Sys.setlocale("LC_TIME", "C")
+```
+
+# Setup
+
+```{r packages}
+sapply(list("sf", "tidyverse", "terra", "here" , "d6geodata", "gdistance", "viridis"), 
+       library, character.only = TRUE, logical.return = TRUE)
+```
+
+# load theshold rasters for each time slice
+
+## threshold 2020
+
+```{r}
+thresh_2020_l <- lapply(list.files(path = here::here("data", "raw", "threshold_maps", "threshold_maps_2020"),
+                    pattern = ".tif$",
+                    full.names = TRUE,
+                    recursive = TRUE), rast) 
+```
+
+## threshold 2050
+
+```{r}
+thresh_2050_l <- lapply(c(5,49), function(x){
+  ras_list <- list.files(path = here::here("data", "raw", "threshold_maps", "threshold_maps_2050"),
+                    pattern = paste0(x, ".tif$"),
+                    full.names = TRUE,
+                    recursive = TRUE)
+  ras <- sum(do.call(rast, list(ras_list)))
+  
+  values(ras) <- ifelse(values(ras)>2,1,0)
+  names(ras) <- x
+  
+  return(ras)
+  })
+
+
+```
+
+## threshold 2080
+
+```{r}
+thresh_2080_l <- lapply(c(5,49), function(x){
+  ras_list <- list.files(path = here::here("data", "raw", "threshold_maps", "threshold_maps_2080"),
+                    pattern = paste0(x, ".tif$"),
+                    full.names = TRUE,
+                    recursive = TRUE)
+  ras <- sum(do.call(rast, list(ras_list)))
+  
+  values(ras) <- ifelse(values(ras)>2,1,0)
+  names(ras) <- x
+  
+  return(ras)
+})
+```
+
+# select nodes per species
+
+```{r}
+nodes_all <- st_read(here("data", "raw", "nodes_all.gpkg"))
+```
+
+
+## nodes 2020
+
+```{r}
+lapply(thresh_2020_l, function(x){
+  nodes <-  nodes_all
+  extract_df <- extract(x, nodes_all, fun = "sum", na.rm = TRUE, ID = FALSE)*0.865 # because of lat lon
+  nodes$thresh_area <- extract_df[,1]
+  nodes$area <- as.numeric(st_area(nodes)/1e6) # in km2
+  nodes_sub <- nodes |> 
+    filter(thresh_area > 50 | thresh_area >= area/2) # select only 50 km2 or if half of area is covered by threshold map
+  st_write(nodes_sub, here("data", "processed", "node_layers", "nodes_2020",
+                           paste0("nodes_2020_species_", gsub("sp", "", names(x)), ".gpkg")))
+}) 
+
+```
+
+## nodes 2050
+
+```{r}
+lapply(thresh_2050_l, function(x){
+  nodes <-  nodes_all
+  extract_df <- extract(x, nodes_all, fun = "sum", na.rm = TRUE, ID = FALSE)*0.865 # because of lat lon
+  nodes$thresh_area <- extract_df[,1]
+  nodes$area <- as.numeric(st_area(nodes)/1e6) # in km2
+  nodes_sub <- nodes |> 
+    filter(thresh_area > 50 | thresh_area >= area/2) # select only 50 km2 or if half of area is covered by threshold map
+  st_write(nodes_sub, here("data", "processed", "node_layers", "nodes_2050",
+                           paste0("nodes_2050_species_", names(x), ".gpkg")))
+}) 
+```
+
+## nodes 2080
+
+```{r}
+lapply(thresh_2080_l, function(x){
+  nodes <-  nodes_all
+  extract_df <- extract(x, nodes_all, fun = "sum", na.rm = TRUE, ID = FALSE)*0.865 # because of lat lon
+  nodes$thresh_area <- extract_df[,1]
+  nodes$area <- as.numeric(st_area(nodes)/1e6) # in km2
+  nodes_sub <- nodes |> 
+    filter(thresh_area > 50 | thresh_area >= area/2) # select only 50 km2 or if half of area is covered by threshold map
+  st_write(nodes_sub, here("data", "processed", "node_layers", "nodes_2080",
+                           paste0("nodes_2080_species_", names(x), ".gpkg")))
+}) 
+```
+
+
+# plot data
+
+## plot threshold map 2020
+
+```{r}
+lapply(thresh_2020_l, function(x){
+  thresh <- x
+  nodes <- st_read(here("data", "processed", "node_layers", "nodes_2020",
+                           paste0("nodes_2020_species_", gsub("sp", "", names(x)), ".gpkg"))) |> st_transform(4326)
+
+thresh_cat <- thresh
+
+values(thresh_cat) <- ifelse(values(thresh_cat) == 1, "1", "0")
+
+ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(thresh_cat)) + 
+  scale_fill_manual(values = c(viridis(10)[1], viridis(10)[10]), 
+    name = "", na.value = "transparent",
+    na.translate = F) + 
+      ggplot2::coord_sf(expand = FALSE) + 
+    ggnewscale::new_scale_fill() +
+  geom_sf(data = nodes, fill = "grey70", color = NA) +  #alpha(viridis::viridis(10)[10], 0.7)
+   ggtitle("Threshold Maps 2020") + 
+  theme_void()
+
+ggsave(here(
+  "plots",
+  "threshold_plots_2020",
+  paste0("threshold_map_2020_species_", gsub("sp", "",names(x)), ".png")
+), dpi = 300)
+
+})
+```
+
+## plot threshold map 2050
+
+```{r}
+lapply(thresh_2050_l, function(x){
+  thresh <- x
+  nodes <- st_read(here("data", "processed", "node_layers", "nodes_2050",
+                           paste0("nodes_2050_species_", names(x), ".gpkg"))) |> st_transform(4326)
+
+thresh_cat <- thresh
+
+values(thresh_cat) <- ifelse(values(thresh_cat) == 1, "1", "0")
+
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(thresh_cat)) + 
+  scale_fill_manual(values = c(viridis(10)[1], viridis(10)[10]), 
+    name = "", na.value = "transparent",
+    na.translate = F) + 
+      ggplot2::coord_sf(expand = FALSE) + 
+    ggnewscale::new_scale_fill() +
+  geom_sf(data = nodes, fill = "grey70", color = NA) +  #alpha(viridis::viridis(10)[10], 0.7)
+   ggtitle("Threshold Maps 2050") + 
+  theme_void()
+
+ggsave(here(
+  "plots",
+  "threshold_plots_2050",
+  paste0("threshold_map_2050_species_", gsub("sp", "",names(x)), ".png")
+), dpi = 300)
+
+})
+```
+
+## plot threshold map 2080
+
+```{r}
+lapply(thresh_2080_l, function(x){
+  thresh <- x
+  nodes <- st_read(here("data", "processed", "node_layers", "nodes_2080",
+                           paste0("nodes_2080_species_", names(x), ".gpkg"))) |> st_transform(4326)
+
+thresh_cat <- thresh
+
+values(thresh_cat) <- ifelse(values(thresh_cat) == 1, "1", "0")
+
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(thresh_cat)) + 
+  scale_fill_manual(values = c(viridis(10)[1], viridis(10)[10]), 
+    name = "", na.value = "transparent",
+    na.translate = F) + 
+      ggplot2::coord_sf(expand = FALSE) + 
+    ggnewscale::new_scale_fill() +
+  geom_sf(data = nodes, fill = "grey70", color = NA) +  #alpha(viridis::viridis(10)[10], 0.7)
+   ggtitle("Threshold Maps 2080") + 
+  theme_void()
+
+ggsave(here(
+  "plots",
+  "threshold_plots_2080",
+  paste0("threshold_map_2080_species_", gsub("sp", "",names(x)), ".png")
+), dpi = 300)
+
+})
+```
+
+
+</details>
+
+
+***
+
+<details><summary>Session Info</summary>
+
+```{r sessionInfo}
+## DO NOT REMOVE!
+Sys.time()
+#git2r::repository() ## uncomment if you are using GitHub
+sessionInfo()
+```
+
+</details>

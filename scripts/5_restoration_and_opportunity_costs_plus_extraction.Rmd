@@ -1,0 +1,1305 @@
+---
+title: "restoration and opportunity costs plus extraction" 
+
+author:
+    - name: "Moritz Wenzler-Meya"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 
+    - name: "Stephanie Kramer-Schadt"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id:
+date: "`r Sys.Date()`"
+output: 
+    distill::distill_article:
+        highlight: kate
+        code_folding: false  
+        toc: true            
+        toc_depth: 2         
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+                      dev = "ragg_png", fig.width = 9, fig.height = 6, dpi = 600, retina = 1)
+Sys.setlocale("LC_TIME", "C")
+```
+
+# Info
+
+Note that this script is an example for two species. We provided the outcome for all species paths and timeslices in script 6.
+
+# Setup
+
+```{r packages}
+sapply(list("sf", "tidyverse", "terra", "here" , "d6geodata", "gdistance"), 
+       library, character.only = TRUE, logical.return = TRUE)
+```
+
+# data
+
+## opportunity costs - without protected areas (pa)
+
+```{r}
+oppcost.nopa <- rast(here::here("data", "raw", "cost_layer", "OPPcost_nopa.asc"))
+
+oppcost.nopa_inf <- oppcost.nopa * 1.195583 # inflation
+
+names(oppcost.nopa_inf) <- "opportunity_nopa_costs"
+```
+
+## peatland and wetland for restoration costs
+
+```{r}
+peat <- st_read(here::here("data", "raw", "Peat_wetland", "borneo_wetland_ll.shp"))
+
+peat.kal <- rast(here::here("data", "raw", "Peat_wetland", "peat_kalsum", "hdr.adf"))
+
+crs(peat.kal) <- as.character(st_crs(3857)[2])
+
+peat.kal_reproj <- project(peat.kal, oppcost.nopa_inf, mask = TRUE)
+
+mask <- oppcost.nopa_inf
+
+values(mask) <- 1
+
+peat_mask <- mask(mask, peat)
+values(peat_mask) <- as.factor(values(peat_mask))
+peat_mask <- catalyze(peat_mask, index = 2) # make numeric again
+peat.kal_mask <- mask(mask, peat.kal_reproj)
+values(peat.kal_mask) <- as.factor(values(peat.kal_mask))
+peat.kal_mask <- catalyze(peat.kal_mask, index = 2) # make numeric again
+```
+
+## concession map for restoration costs
+
+```{r}
+concess <-rast(here("data", "raw", "cost_layer", "concession_map.asc"))
+
+concess[concess == 2 | concess == 4] <- 2
+concess[concess == 5 | concess == 6 | concess == 7] <- 4
+
+values(concess) <- as.factor(values(concess))
+
+concess <- resample(concess, mask)
+
+concess <- catalyze(concess, index = 2) # make numeric again
+```
+
+
+## landcover for restoration costs
+
+```{r}
+lc_resa_2020 <- rast(here("data", "raw", "landcover_maps", "landcover_2020", "hdr.adf"))
+
+
+lc_resa_2050 <- rast(here("data", "raw", "landcover_maps", "landcover_2050", "hdr.adf"))
+# make extent comparable to other layers
+values(lc_resa_2050) <- as.factor(values(lc_resa_2050))
+lc_resa_2050 <- resample(lc_resa_2050, mask)
+lc_resa_2050 <- catalyze(lc_resa_2050, index = 2) # make numeric again
+
+lc_resa_2080 <- rast(here("data", "raw", "landcover_maps", "landcover_2080", "hdr.adf"))
+# make extent comparable to other layers
+values(lc_resa_2080) <- as.factor(values(lc_resa_2080))
+lc_resa_2080 <- resample(lc_resa_2080, mask)
+lc_resa_2080 <- catalyze(lc_resa_2080, index = 2) # make numeric again
+```
+
+
+## calculate restoration costs per timeslice
+
+```{r}
+# this function gives each landuse class a restoration cost. the numbers behind the # are the costs from 2013.
+# we to took the inflation until 2018 into account for the new values.
+fun_resto <- function(r,y,z,u) {
+  x <- r
+  x[r == 1 & y == 1] <- 0
+  x[r == 2 & y == 1] <- 0
+  x[r == 1 & y == 2] <- 461 #420.5
+  x[r == 2 & y == 2] <- 461 #420.5
+  x[r == 1 & y == 3] <- 706 #643.72
+  x[r == 2 & y == 3] <- 706 #643.72
+  x[r == 1 & y == 4] <- 1399 #1275.98
+  x[r == 2 & y == 4] <- 1399 #1275.98
+  x[r == 3 & y == 1] <- 0
+  x[r == 4 & y == 1] <- 0
+  x[r == 3 & y == 2] <- 504 #460.2
+  x[r == 4 & y == 2] <- 504 #460.2
+  x[r == 3 & y == 3] <- 794 #724.68
+  x[r == 4 & y == 3] <- 794 #724.68
+  x[r == 3 & y == 4] <- 1589 #1450.37
+  x[r == 4 & y == 4] <- 1589 #1450.37
+  x[r == 5 & y == 1] <- 461 #420.5
+  x[r == 6 & y == 1] <- 461 #420.5
+  x[r == 5 & y == 2] <- 706 #643.72
+  x[r == 6 & y == 2] <- 706 #643.72
+  x[r == 5 & y == 3] <- 706 #643.72
+  x[r == 6 & y == 3] <- 706 #643.72
+  x[r == 5 & y == 4] <- 1399 #1275.98
+  x[r == 6 & y == 4] <- 1399 #1275.98
+  # x[r == 7 & y == 1] <- 504 #460.2
+  # x[r == 8 & y == 1] <- 504 #460.2
+  # x[r == 7 & y == 2] <- 794 #724.68
+  # x[r == 8 & y == 2] <- 794 #724.68
+  # x[r == 7 & y == 3] <- 794 #724.68
+  # x[r == 8 & y == 3] <- 794 #724.68
+  # x[r == 7 & y == 4] <- 1589 #1450.37
+  # x[r == 8 & y == 4] <- 1589 #1450.37
+  x[r == 9 & y == 1] <- 0
+  x[r == 9 & y == 2] <- 517 #472.02
+  x[r == 9 & y == 3] <- 819 #746.76
+  x[r == 9 & y == 4] <- 1969 #1796.36
+  x[r == 10 & y == 1] <- 0
+  x[r == 10 & y == 2] <- 665 #606.26
+  x[r == 10 & y == 3] <- 1204 #1098.03
+  x[r == 10 & y == 4] <- 1204 #1098.03
+  x[r == 11 & y == 1] <- 1399
+  x[r == 12 & y == 1] <- 1399
+  x[r == 11 & y == 2] <- 1399
+  x[r == 12 & y == 2] <- 1399
+  x[r == 11 & y == 3] <- 1399
+  x[r == 12 & y == 3] <- 1399
+  x[r == 11 & y == 4] <- 1399 #1275.98
+  x[r == 12 & y == 4] <- 1399 #1275.98
+  x[r == 13 & y == 1] <- 706 #643.72
+  x[r == 13 & y == 2] <- 706 #643.72
+  x[r == 13 & y == 3] <- 706 #643.72
+  x[r == 13 & y == 4] <- 1399 #1275.98
+  x[r == 14 & y == 1] <- 1399
+  x[r == 14 & y == 2] <- 1399
+  x[r == 14 & y == 3] <- 1399
+  x[r == 14 & y == 4] <- 1399 #1275.98
+  x[r == 15 & y == 1] <- 0
+  x[r == 16 & y == 1] <- 0
+  x[r == 15 & y == 2] <- 0
+  x[r == 16 & y == 2] <- 0
+  x[r == 15 & y == 3] <- 0
+  x[r == 16 & y == 3] <- 0
+  x[r == 15 & y == 4] <- 0
+  x[r == 16 & y == 4] <- 0
+  x[r == 16] <- NA
+  x[r == 17] <- 0
+  #x[y == 0] <- NA
+  x[r == 11 & z == 1 & y == 1] <- 1399
+  x[r == 11 & z == 1 & y == 2] <- 1399
+  x[r == 11 & z == 1 & y == 3] <- 1399
+  x[r == 11 & z == 1 & y == 4] <- 1399
+  x[r == 12 & z == 1 & y == 1] <- 1399
+  x[r == 12 & z == 1 & y == 2] <- 1399
+  x[r == 12 & z == 1 & y == 3] <- 1399
+  x[r == 12 & z == 1 & y == 4] <- 1399
+  x[r == 14 & z == 1 & y == 1] <- 1399
+  x[r == 14 & z == 1 & y == 2] <- 1399
+  x[r == 14 & z == 1 & y == 3] <- 1399
+  x[r == 14 & z == 1 & y == 4] <- 1399
+  x[r == 11 & u == 1 & y == 1] <- 1399
+  x[r == 11 & u == 1 & y == 2] <- 1399
+  x[r == 11 & u == 1 & y == 3] <- 1399
+  x[r == 11 & u == 1 & y == 4] <- 1399
+  x[r == 12 & u == 1 & y == 1] <- 1399
+  x[r == 12 & u == 1 & y == 2] <- 1399
+  x[r == 12 & u == 1 & y == 3] <- 1399
+  x[r == 12 & u == 1 & y == 4] <- 1399
+  x[r == 14 & u == 1 & y == 1] <- 1399
+  x[r == 14 & u == 1 & y == 2] <- 1399
+  x[r == 14 & u == 1 & y == 3] <- 1399
+  x[r == 14 & u == 1 & y == 4] <- 1399
+
+  return(x)
+}
+
+resto_inter_2020 <- fun_resto(r = lc_resa_2020, y = concess, z = peat_mask, u = peat.kal_mask)
+resto_inter_2050 <- fun_resto(r = lc_resa_2050, y = concess, z = peat_mask, u = peat.kal_mask)
+resto_inter_2080 <- fun_resto(r = lc_resa_2080, y = concess, z = peat_mask, u = peat.kal_mask)
+
+values(resto_inter_2020) <- ifelse(values(resto_inter_2020) <= 15, NA, values(resto_inter_2020))
+values(resto_inter_2050) <- ifelse(values(resto_inter_2050) <= 15, NA, values(resto_inter_2050))
+values(resto_inter_2080) <- ifelse(values(resto_inter_2080) <= 15, NA, values(resto_inter_2080))
+
+names(resto_inter_2020) <- "restoration_costs"
+names(resto_inter_2050) <- "restoration_costs"
+names(resto_inter_2080) <- "restoration_costs"
+
+writeRaster(
+  resto_inter_2020,
+  here(
+    "data",
+    "processed",
+    "restoration_cost_layer",
+    "restoration_costs_2020.tif"
+  ),
+  overwrite = TRUE
+)
+writeRaster(
+  resto_inter_2050,
+  here(
+    "data",
+    "processed",
+    "restoration_cost_layer",
+    "restoration_costs__2050.tif"
+  ),
+  overwrite = TRUE
+)
+writeRaster(
+  resto_inter_2080,
+  here(
+    "data",
+    "processed",
+    "restoration_cost_layer",
+    "restoration_costs_2080.tif"
+  ),
+  overwrite = TRUE
+)
+
+```
+
+# store all values to lcps per timeslice
+
+## load lcps
+
+```{r}
+lcp_2020_l <- list.files(path = here("data", "processed", "lcp_2020"),
+                               pattern = "_2020.gpkg",
+                               full.names = TRUE)
+
+lcp_2050_l <- list.files(path = here("data", "processed", "lcp_2050"),
+                               pattern = "_2050.gpkg",
+                               full.names = TRUE)
+
+lcp_2080_l <- list.files(path = here("data", "processed", "lcp_2080"),
+                               pattern = "_2080.gpkg",
+                               full.names = TRUE)
+```
+
+## load threshold maps
+
+### threshold 2020
+
+```{r}
+thresh_2020_l <- lapply(c(5,49), function(x){
+                        rast(list.files(path = here::here("data", "raw", "threshold_maps", "threshold_maps_2020"),
+                        pattern = paste0(x, ".tif$"),
+                        full.names = TRUE,
+                        recursive = TRUE))
+  }
+  ) 
+```
+
+### threshold 2050
+
+```{r}
+thresh_2050_l <- lapply(c(5,49), function(x){
+  ras_list <- list.files(path = here::here("data", "raw", "threshold_maps", "threshold_maps_2050"),
+                    pattern = paste0(x, ".tif$"),
+                    full.names = TRUE,
+                    recursive = TRUE)
+  ras <- sum(do.call(rast, list(ras_list)))
+  
+  values(ras) <- ifelse(values(ras)>2,1,0)
+  names(ras) <- x
+  
+  return(ras)
+  })
+
+
+```
+
+### threshold 2080
+
+```{r}
+thresh_2080_l <- lapply(c(5,49), function(x){
+  ras_list <- list.files(path = here::here("data", "raw", "threshold_maps", "threshold_maps_2080"),
+                    pattern = paste0(x, ".tif$"),
+                    full.names = TRUE,
+                    recursive = TRUE)
+  ras <- sum(do.call(rast, list(ras_list)))
+  
+  values(ras) <- ifelse(values(ras)>2,1,0)
+  names(ras) <- x
+  
+  return(ras)
+})
+```
+
+## load forest data
+
+```{r}
+forest_2020_bin <- lc_resa_2020 
+forest_2020_bin[forest_2020_bin == 10] <- 1
+values(forest_2020_bin) <- ifelse(values(lc_resa_2020 >= 5),0,1)
+names(forest_2020_bin) <- "forest_bin"
+
+forest_2050_bin <- lc_resa_2050 
+forest_2050_bin[forest_2050_bin == 10] <- 1
+values(forest_2050_bin) <- ifelse(values(lc_resa_2050 >= 5),0,1)
+names(forest_2050_bin) <- "forest_bin"
+
+forest_2080_bin <- lc_resa_2080 
+forest_2080_bin[forest_2080_bin == 10] <- 1
+values(forest_2080_bin) <- ifelse(values(lc_resa_2080 >= 5),0,1)
+names(forest_2080_bin) <- "forest_bin"
+```
+
+## load hsi data
+
+```{r}
+hsi_2020_l <- lapply(list.files(path = here::here("data", "raw", "hsi_maps", "hsi_2020"),
+                    pattern = ".asc$",
+                    full.names = TRUE,
+                    recursive = TRUE), rast)
+
+hsi_2050_l <- lapply(list.files(path = here::here("data", "raw", "hsi_maps", "hsi_2050"),
+                    pattern = ".asc$",
+                    full.names = TRUE,
+                    recursive = TRUE) , rast)
+
+hsi_2080_l <- lapply(list.files(path = here::here("data", "raw", "hsi_maps", "hsi_2080"),
+                    pattern = ".asc$",
+                    full.names = TRUE,
+                    recursive = TRUE) , rast)
+```
+
+
+## load circuitscape data
+
+```{r}
+circuitscape_2020_l <- lapply(list.files(
+  path = here::here("data",
+                    "processed",
+                    "circuitscape_2020"),
+  pattern = "_cum_curmap.asc$",
+  full.names = TRUE,
+  recursive = TRUE
+) , rast)
+
+circuitscape_2050_l <- lapply(list.files(
+  path = here::here("data",
+                    "processed",
+                    "circuitscape_2050"),
+  pattern = "_cum_curmap.asc$",
+  full.names = TRUE,
+  recursive = TRUE
+) , rast)
+
+circuitscape_2080_l <- lapply(list.files(
+  path = here::here("data",
+                    "processed",
+                    "circuitscape_2080"),
+  pattern = "_cum_curmap.asc$",
+  full.names = TRUE,
+  recursive = TRUE
+) , rast)
+```
+
+
+## extract all values
+
+### 2020
+```{r}
+extract_2020 <- lapply(c(5,49), function(x){
+  lcp <- st_read(lcp_2020_l[str_detect(lcp_2020_l, pattern = paste0(x, "_2020.gpkg$")) %in% TRUE])
+  # restoration costs
+  ## 2020
+  lcp <- bind_cols(lcp, extract(x = resto_inter_2020, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_resto_sum_2020 = sum(restoration_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2050
+  lcp <- bind_cols(lcp, extract(x = resto_inter_2050, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_resto_sum_2050 = sum(restoration_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2080
+  lcp <- bind_cols(lcp, extract(x = resto_inter_2080, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_resto_sum_2080 = sum(restoration_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  
+  # opportunity costs
+  lcp <- bind_cols(lcp, extract(x = oppcost.nopa_inf, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_oppcost_sum_2020 = sum(opportunity_pa_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  
+  # threshold maps - mean
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2020_l[str_detect(lapply(thresh_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("sp", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_mean_2020 = across(starts_with("sp"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_mean_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2050_l[str_detect(lapply(thresh_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_mean_2050 = across(starts_with(paste0(x)), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_mean_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2080_l[str_detect(lapply(thresh_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_mean_2080 = across(starts_with(paste0(x)), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_mean_2080")) 
+  
+  # threshold maps - sum
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2020_l[str_detect(lapply(thresh_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("sp", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_sum_2020 = across(starts_with("sp"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_sum_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2050_l[str_detect(lapply(thresh_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_sum_2050 = across(starts_with(paste0(x)), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_sum_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2080_l[str_detect(lapply(thresh_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_sum_2080 = across(starts_with(paste0(x)), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_sum_2080")) 
+  
+  # forests
+  ## 2020
+  lcp <- bind_cols(lcp, extract(x = forest_2020_bin, lcp) |> 
+    group_by(ID) |> 
+    summarise(num_forest_2020 = sum(forest_bin, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2050
+  lcp <- bind_cols(lcp, extract(x = forest_2050_bin, lcp) |> 
+    group_by(ID) |> 
+    summarise(num_forest_2050 = sum(forest_bin, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2080
+  lcp <- bind_cols(lcp, extract(x = forest_2080_bin, lcp) |> 
+    group_by(ID) |> 
+    summarise(num_forest_2080 = sum(forest_bin, na.rm = TRUE)) |> dplyr::select(-ID))
+  
+  # hsi - sum
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2020_l[str_detect(lapply(hsi_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_sum_2020 = across(starts_with("cost_rast_"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_sum_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2050_l[str_detect(lapply(hsi_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_sum_2050 = across(starts_with("cost_rast_"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_sum_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2080_l[str_detect(lapply(hsi_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_sum_2080 = across(starts_with("cost_rast_"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_sum_2080")) 
+  
+  # hsi - mean
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2020_l[str_detect(lapply(hsi_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_mean_2020 = across(starts_with("cost_rast_"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_mean_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2050_l[str_detect(lapply(hsi_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_mean_2050 = across(starts_with("cost_rast_"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_mean_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2080_l[str_detect(lapply(hsi_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_mean_2080 = across(starts_with("cost_rast_"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_mean_2080")) 
+
+  
+  # circuitscape - sum
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2020_l[str_detect(lapply(circuitscape_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_sum_2020 = across(starts_with("CS_cur_hsi_"), 
+                                                 ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_sum_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2050_l[str_detect(lapply(circuitscape_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_sum_2050 = across(starts_with("CS_lc_2050_"), 
+                                                 ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_sum_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2080_l[str_detect(lapply(circuitscape_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_sum_2080 = across(starts_with("CS_lc_2080_"), 
+                                                 ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_sum_2080")) 
+  
+  # circuitscape - mean
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2020_l[str_detect(lapply(circuitscape_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_mean_2020 = across(starts_with("CS_cur_hsi_"), 
+                                                 ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_mean_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2050_l[str_detect(lapply(circuitscape_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_mean_2050 = across(starts_with("CS_lc_2050_"), 
+                                                 ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_mean_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2080_l[str_detect(lapply(circuitscape_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_mean_2080 = across(starts_with("CS_lc_2080_"), 
+                                                 ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_mean_2080"))
+  
+})
+
+#st_write(extract_2020, here("data", "processed", "lcp_join", "lcp_join_2020.gpkg")) # not run
+st_write(extract_2020, here("data", "processed", "lcp_join", "lcp_join_2020_species_5_49.gpkg"))
+
+
+```
+
+### 2050
+
+```{r}
+extract_2050 <- lapply(c(5,49), function(x){
+  lcp <- st_read(lcp_2050_l[str_detect(lcp_2050_l, pattern = paste0(x, "_2050.gpkg$")) %in% TRUE])
+  # restoration costs
+  ## 2020
+  lcp <- bind_cols(lcp, extract(x = resto_inter_2020, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_resto_sum_2020 = sum(restoration_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2050
+  lcp <- bind_cols(lcp, extract(x = resto_inter_2050, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_resto_sum_2050 = sum(restoration_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2080
+  lcp <- bind_cols(lcp, extract(x = resto_inter_2080, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_resto_sum_2080 = sum(restoration_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  
+  # opportunity costs
+  lcp <- bind_cols(lcp, extract(x = oppcost.nopa_inf, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_oppcost_sum_2020 = sum(opportunity_pa_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  
+  # threshold maps - mean
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2020_l[str_detect(lapply(thresh_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("sp", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_mean_2020 = across(starts_with("sp"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_mean_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2050_l[str_detect(lapply(thresh_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_mean_2050 = across(starts_with(paste0(x)), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_mean_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2080_l[str_detect(lapply(thresh_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_mean_2080 = across(starts_with(paste0(x)), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_mean_2080")) 
+  
+  # threshold maps - sum
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2020_l[str_detect(lapply(thresh_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("sp", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_sum_2020 = across(starts_with("sp"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_sum_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2050_l[str_detect(lapply(thresh_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_sum_2050 = across(starts_with(paste0(x)), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_sum_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2080_l[str_detect(lapply(thresh_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_sum_2080 = across(starts_with(paste0(x)), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_sum_2080")) 
+  
+  # forests
+  ## 2020
+  lcp <- bind_cols(lcp, extract(x = forest_2020_bin, lcp) |> 
+    group_by(ID) |> 
+    summarise(num_forest_2020 = sum(forest_bin, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2050
+  lcp <- bind_cols(lcp, extract(x = forest_2050_bin, lcp) |> 
+    group_by(ID) |> 
+    summarise(num_forest_2050 = sum(forest_bin, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2080
+  lcp <- bind_cols(lcp, extract(x = forest_2080_bin, lcp) |> 
+    group_by(ID) |> 
+    summarise(num_forest_2080 = sum(forest_bin, na.rm = TRUE)) |> dplyr::select(-ID))
+  
+  # hsi - sum
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2020_l[str_detect(lapply(hsi_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_sum_2020 = across(starts_with("cost_rast_"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_sum_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2050_l[str_detect(lapply(hsi_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_sum_2050 = across(starts_with("cost_rast_"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_sum_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2080_l[str_detect(lapply(hsi_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_sum_2080 = across(starts_with("cost_rast_"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_sum_2080")) 
+  
+  # hsi - mean
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2020_l[str_detect(lapply(hsi_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_mean_2020 = across(starts_with("cost_rast_"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_mean_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2050_l[str_detect(lapply(hsi_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_mean_2050 = across(starts_with("cost_rast_"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_mean_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2080_l[str_detect(lapply(hsi_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_mean_2080 = across(starts_with("cost_rast_"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_mean_2080")) 
+
+  
+  # circuitscape - sum
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2020_l[str_detect(lapply(circuitscape_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_sum_2020 = across(starts_with("CS_cur_hsi_"), 
+                                                 ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_sum_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2050_l[str_detect(lapply(circuitscape_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_sum_2050 = across(starts_with("CS_lc_2050_"), 
+                                                 ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_sum_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2080_l[str_detect(lapply(circuitscape_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_sum_2080 = across(starts_with("CS_lc_2080_"), 
+                                                 ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_sum_2080")) 
+  
+  # circuitscape - mean
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2020_l[str_detect(lapply(circuitscape_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_mean_2020 = across(starts_with("CS_cur_hsi_"), 
+                                                 ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_mean_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2050_l[str_detect(lapply(circuitscape_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_mean_2050 = across(starts_with("CS_lc_2050_"), 
+                                                 ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_mean_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2080_l[str_detect(lapply(circuitscape_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_mean_2080 = across(starts_with("CS_lc_2080_"), 
+                                                 ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_mean_2080"))
+  
+})
+
+
+#st_write(extract_2050, here("data", "processed", "lcp_join", "lcp_join_2050.gpkg")) # not run
+st_write(extract_2050, here("data", "processed", "lcp_join", "lcp_join_2050_species_5_49.gpkg"))
+
+```
+
+### 2080
+
+```{r}
+extract_2080 <- lapply(c(5,49), function(x){
+  lcp <- st_read(lcp_2080_l[str_detect(lcp_2080_l, pattern = paste0(x, "_2080.gpkg$")) %in% TRUE])
+  # restoration costs
+  ## 2020
+  lcp <- bind_cols(lcp, extract(x = resto_inter_2020, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_resto_sum_2020 = sum(restoration_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2050
+  lcp <- bind_cols(lcp, extract(x = resto_inter_2050, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_resto_sum_2050 = sum(restoration_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2080
+  lcp <- bind_cols(lcp, extract(x = resto_inter_2080, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_resto_sum_2080 = sum(restoration_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  
+  # opportunity costs
+  lcp <- bind_cols(lcp, extract(x = oppcost.nopa_inf, lcp) |> 
+    group_by(ID) |> 
+    summarise(cost_oppcost_sum_2020 = sum(opportunity_pa_costs, na.rm = TRUE)) |> dplyr::select(-ID))
+  
+  # threshold maps - mean
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2020_l[str_detect(lapply(thresh_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("sp", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_mean_2020 = across(starts_with("sp"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_mean_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2050_l[str_detect(lapply(thresh_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_mean_2050 = across(starts_with(paste0(x)), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_mean_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2080_l[str_detect(lapply(thresh_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_mean_2080 = across(starts_with(paste0(x)), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_mean_2080")) 
+  
+  # threshold maps - sum
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2020_l[str_detect(lapply(thresh_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("sp", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_sum_2020 = across(starts_with("sp"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_sum_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2050_l[str_detect(lapply(thresh_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_sum_2050 = across(starts_with(paste0(x)), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_sum_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (thresh_2080_l[str_detect(lapply(thresh_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0(x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(t_10_sum_2080 = across(starts_with(paste0(x)), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("t_10_sum_2080")) 
+  
+  # forests
+  ## 2020
+  lcp <- bind_cols(lcp, extract(x = forest_2020_bin, lcp) |> 
+    group_by(ID) |> 
+    summarise(num_forest_2020 = sum(forest_bin, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2050
+  lcp <- bind_cols(lcp, extract(x = forest_2050_bin, lcp) |> 
+    group_by(ID) |> 
+    summarise(num_forest_2050 = sum(forest_bin, na.rm = TRUE)) |> dplyr::select(-ID))
+  ## 2080
+  lcp <- bind_cols(lcp, extract(x = forest_2080_bin, lcp) |> 
+    group_by(ID) |> 
+    summarise(num_forest_2080 = sum(forest_bin, na.rm = TRUE)) |> dplyr::select(-ID))
+  
+  # hsi - sum
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2020_l[str_detect(lapply(hsi_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_sum_2020 = across(starts_with("cost_rast_"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_sum_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2050_l[str_detect(lapply(hsi_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_sum_2050 = across(starts_with("cost_rast_"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_sum_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2080_l[str_detect(lapply(hsi_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_sum_2080 = across(starts_with("cost_rast_"), ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_sum_2080")) 
+  
+  # hsi - mean
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2020_l[str_detect(lapply(hsi_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_mean_2020 = across(starts_with("cost_rast_"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_mean_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2050_l[str_detect(lapply(hsi_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_mean_2050 = across(starts_with("cost_rast_"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_mean_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (hsi_2080_l[str_detect(lapply(hsi_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(hsi_mean_2080 = across(starts_with("cost_rast_"), ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("hsi_mean_2080")) 
+
+  
+  # circuitscape - sum
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2020_l[str_detect(lapply(circuitscape_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_sum_2020 = across(starts_with("CS_cur_hsi_"), 
+                                                 ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_sum_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2050_l[str_detect(lapply(circuitscape_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_sum_2050 = across(starts_with("CS_lc_2050_"), 
+                                                 ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_sum_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2080_l[str_detect(lapply(circuitscape_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_sum_2080 = across(starts_with("CS_lc_2080_"), 
+                                                 ~ sum(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_sum_2080")) 
+  
+  # circuitscape - mean
+  
+  ## 2020
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2020_l[str_detect(lapply(circuitscape_2020_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_mean_2020 = across(starts_with("CS_cur_hsi_"), 
+                                                 ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_mean_2020")) 
+  
+  ## 2050
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2050_l[str_detect(lapply(circuitscape_2050_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_mean_2050 = across(starts_with("CS_lc_2050_"), 
+                                                 ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_mean_2050")) 
+  
+  ## 2080
+  lcp <-
+    bind_cols(
+      lcp,
+      (extract(x = (circuitscape_2080_l[str_detect(lapply(circuitscape_2080_l, function(x) {
+        names(x)
+      }), pattern = paste0("prob_", x)) %in% TRUE])[[1]], lcp) |>
+        group_by(ID) |>
+        summarise(circ_mean_2080 = across(starts_with("CS_lc_2080_"), 
+                                                 ~ mean(.x, na.rm = T))) |> 
+        dplyr::select(-ID) 
+    )[[1]]|> 
+        magrittr::set_colnames("circ_mean_2080"))
+  
+})
+
+#st_write(extract_2080, here("data", "processed", "lcp_join", "lcp_join_2080.gpkg")) # not run
+st_write(extract_2080, here("data", "processed", "lcp_join", "lcp_join_2080_species_5_49.gpkg"))
+
+
+```
+
+
+</details>
+
+
+***
+
+<details><summary>Session Info</summary>
+
+```{r sessionInfo}
+## DO NOT REMOVE!
+Sys.time()
+#git2r::repository() ## uncomment if you are using GitHub
+sessionInfo()
+```
+
+</details>

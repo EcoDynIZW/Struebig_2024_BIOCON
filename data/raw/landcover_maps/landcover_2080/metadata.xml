@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<!--<!DOCTYPE metadata SYSTEM "http://www.esri.com/metadata/esriprof80.dtd">-->
+<metadata xml:lang="en"><Esri><MetaID>{EAF06758-ABED-407F-AFB1-966CA7306385}</MetaID><CreaDate>20140403</CreaDate><CreaTime>10472900</CreaTime><SyncOnce>TRUE</SyncOnce><DataProperties><lineage><Process ToolSource="C:\Program Files (x86)\ArcGIS\ArcToolbox\Toolboxes\Spatial Analyst Tools.tbx\ExtractByMask" Date="20140403" Time="104729">ExtractByMask lc2080 Borneo_updated_simple "C:\Users\MattDICE\Dropbox\Borneo Modelling DICE-IZW\For_Matt_from_Manu\landcover_maps\lc2080_ex"</Process></lineage></DataProperties></Esri></metadata>

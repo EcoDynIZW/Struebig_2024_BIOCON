@@ -1,0 +1,692 @@
+---
+title: "loop_coordiaro_metrics_final_20240722_revision_with_statistics"
+output: github_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+p_list <- c("sf", "ggplot2", "ggeffects", "stringr", "dplyr", "foreign", "ggpubr", "here", "tmap", "raster", "d6", "viridis", "viridisLite", "pander")
+
+lapply(p_list, library, character.only = TRUE)
+```
+
+
+# Summary
+
+The following summary is based on the 75% forest cut off file done by Matt Struebig outside this repository. 
+
+```{r}
+ 
+cur_dat <- st_read(here("output", "data-proc", "Corridor_forest_cutoff", "Cur_join75_edit.shp")) 
+lc_2050_dat <- st_read(here("output", "data-proc", "Corridor_forest_cutoff", "lc2050_join75_edit.shp")) 
+lc_2080_dat <- st_read(here("output", "data-proc", "Corridor_forest_cutoff", "lc2080_join75_edit.shp")) 
+```
+
+# NOT RUN 
+## Rename columns
+
+```{r}
+cur_dat <- cur_dat %>% 
+  rename(
+    fid = fid_,
+    cost_resto_sum_cur = cost_resto,
+    cost_resto_sum_lc_2050 = cost_res_1,
+    cost_resto_sum_lc_2080 = cost_res_2,
+    t_10_mean_cur  = t_10_mean_ ,
+    t_10_sum_cur = t_10_sum_2 ,
+    t_25_mean_cur = t_25_mean_ ,
+    t_25_sum_cur = t_25_sum_2 ,
+    t_10_mean_2050  = t_10_mean1 ,
+    t_10_sum_2050 = t_10_sum_c  ,
+    t_25_mean_2050 = t_25_mean1  ,
+    t_25_sum_2050 = t_25_sum_c  ,
+    t_10_mean_2080  = t_10_mea_1  ,
+    t_10_sum_2080 = t_10_sum_3  ,
+    t_25_mean_2080 = t_25_mea_1  ,
+    t_25_sum_2080 = t_25_sum_3  ,
+    num_forest_cur  = num_forest ,
+    num_forest_2050  = num_fore_1 ,
+    num_forest_2080 = num_fore_2 ,
+    cost_oppcost_sum_cur = cost_oppco ,
+    hsi_sum_cur = hsi_sum_cu ,
+    hsi_mean_cur = hsi_mean_c,
+    circ_sum_cur = circ_sum_c,
+    circ_mean_cur = circ_mean_
+  )|> 
+  mutate(year = 2020)
+
+lc_2050_dat <- lc_2050_dat %>% 
+  rename(
+    fid = fid_,
+    cost_resto_sum_cur = cost_resto,
+    cost_resto_sum_lc_2050 = cost_res_1,
+    cost_resto_sum_lc_2080 = cost_res_2,
+    t_10_mean_cur  = t_10_mean_ ,
+    t_10_sum_cur = t_10_sum_2 ,
+    t_25_mean_cur = t_25_mean_ ,
+    t_25_sum_cur = t_25_sum_2,
+    t_10_mean_2050  = t_10_mean1 ,
+    t_10_sum_2050 = t_10_sum_c  ,
+    t_25_mean_2050 = t_25_mean1  ,
+    t_25_sum_2050 = t_25_sum_c  ,
+    t_10_mean_2080  = t_10_mea_1  ,
+    t_10_sum_2080 = t_10_sum_3  ,
+    t_25_mean_2080 = t_25_mea_1  ,
+    t_25_sum_2080 = t_25_sum_3  ,
+    num_forest_cur  = num_forest ,
+    num_forest_2050  = num_fore_1 ,
+    num_forest_2080 = num_fore_2 ,
+    cost_oppcost_sum_lc_2050 = cost_oppco ,
+    hsi_sum_lc_2050 = hsi_sum_lc ,
+    hsi_mean_lc_2050 = hsi_mean_l,
+    circ_sum_lc_2050 = circ_sum_l,
+    circ_mean_lc_2050 = circ_mean_
+  )|> 
+  mutate(year = 2050)
+
+lc_2080_dat <- lc_2080_dat %>% 
+  rename(
+    fid = fid_,
+    cost_resto_sum_cur = cost_resto,
+    cost_resto_sum_lc_2050 = cost_res_1,
+    cost_resto_sum_lc_2080 = cost_res_2,
+    t_10_mean_cur  = t_10_mean_ ,
+    t_10_sum_cur = t_10_sum_2 ,
+    t_25_mean_cur = t_25_mean_ ,
+    t_25_sum_cur = t_25_sum_2 ,
+    t_10_mean_2050  = t_10_mean1 ,
+    t_10_sum_2050 = t_10_sum_c  ,
+    t_25_mean_2050 = t_25_mean1  ,
+    t_25_sum_2050 = t_25_sum_c  ,
+    t_10_mean_2080  = t_10_mea_1  ,
+    t_10_sum_2080 = t_10_sum_3  ,
+    t_25_mean_2080 = t_25_mea_1  ,
+    t_25_sum_2080 = t_25_sum_3  ,
+    num_forest_cur  = num_forest ,
+    num_forest_2050  = num_fore_1 ,
+    num_forest_2080 = num_fore_2 ,
+    cost_oppcost_sum_lc_2080 = cost_oppco ,
+    hsi_sum_lc_2080 = hsi_sum_lc ,
+    hsi_mean_lc_2080 = hsi_mean_l,
+    circ_sum_lc_2080 = circ_sum_l,
+    circ_mean_lc_2080 = circ_mean_
+  )|> 
+  mutate(year = 2080)
+```
+
+
+## create all_data
+
+```{r}
+
+cur_dat_sub <- cur_dat  %>%
+  group_by(spec_id, spec_tax, year) %>%
+  summarize(n_cor = n(),
+            len_sum = round(sum(len, na.rm = T)/1000, digits = 2), # convert to km
+            len_mean = round(mean(len, na.rm = T)/1000, digits = 2), # convert to km
+            hsi_mean =round(mean(hsi_mean_cur, na.rm = T)/1000, digits = 2),
+            hsi_sum =round(sum(hsi_sum_cur, na.rm = T)/1000, digits = 2),
+            cs_mean = round(mean(circ_mean_cur, na.rm = T), digits = 2),
+            forest_prop = round(mean(num_forest_cur/(len/1000), na.rm = T), digits = 2),  # convert to km
+            forest_prop_cur = round(mean(num_forest_cur/(len/1000), na.rm = T), digits = 2), # convert to km
+            forest_prop_lc_2050 = round(mean(num_forest_2050/(len/1000), na.rm = T), digits = 2), # convert to km
+            forest_prop_lc_2080 = round(mean(num_forest_2080/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_opp_mean_km = round(mean(cost_oppcost_sum_cur, na.rm = T), digits = 2),
+            cost_resto_mean_km = round(mean(cost_resto_sum_cur, na.rm = T), digits = 2),
+            cost_resto_mean_km_cur = round(mean(cost_resto_sum_cur, na.rm = T), digits = 2),
+            cost_resto_mean_km_lc_2050 = round(mean(cost_resto_sum_lc_2050, na.rm = T), digits = 2),
+            cost_resto_mean_km_lc_2080 = round(mean(cost_resto_sum_lc_2080, na.rm = T), digits = 2),
+            cost_resto_sum_km = round(sum(cost_resto_sum_cur, na.rm = T), digits = 2),
+            cost_resto_sum_km_cur = round(sum(cost_resto_sum_cur, na.rm = T), digits = 2),
+            cost_resto_sum_km_lc_2050 = round(sum(cost_resto_sum_lc_2050, na.rm = T), digits = 2),
+            cost_resto_sum_km_lc_2080 = round(sum(cost_resto_sum_lc_2080, na.rm = T), digits = 2),
+            cost_div_len_opp_km = round(mean(cost_oppcost_sum_cur/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km = round(sum(cost_resto_sum_cur/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km_cur = round(sum(cost_resto_sum_cur/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km_lc_2050 = round(sum(cost_resto_sum_lc_2050/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km_lc_2080 = round(sum(cost_resto_sum_lc_2080/(len/1000), na.rm = T), digits = 2), # convert to km
+            t10_mean = round(mean(t_10_mean_cur , na.rm = T), digits = 2),
+            t10_mean_cur = round(mean(t_10_mean_cur , na.rm = T), digits = 2),
+            t10_mean_lc_2050 = round(mean(t_10_mean_2050 , na.rm = T), digits = 2),
+            t10_mean_lc_2080 = round(mean(t_10_mean_2080 , na.rm = T), digits = 2),
+            t25_mean = round(mean(t_25_mean_cur, na.rm = T), digits = 2),
+            t25_mean_cur = round(mean(t_25_mean_cur, na.rm = T), digits = 2),
+            t25_mean_lc_2050 = round(mean(t_25_mean_2050, na.rm = T), digits = 2),
+            t25_mean_lc_2080 = round(mean(t_25_mean_2080, na.rm = T), digits = 2),
+            cost_div_num = round(mean(cost_resto_sum_cur/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_div_num_cur = round(mean(cost_resto_sum_cur/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_div_num_lc_2050 = round(mean(cost_resto_sum_lc_2050/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_div_num_lc_2080 = round(mean(cost_resto_sum_lc_2080/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_opp_div_num = round(mean(cost_oppcost_sum_cur/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_all_div = round((mean(cost_oppcost_sum_cur, na.rm = T))+(mean(cost_resto_sum_cur, na.rm = T)), digits = 2),
+            cost_all_div_num = round((mean(cost_oppcost_sum_cur/n_cor, na.rm = T))+(mean(cost_resto_sum_cur/n_cor, na.rm = T)),  digits = 2) # divided by number of corridors
+  ) %>% data.frame()
+
+lc_2050_dat_sub <- lc_2050_dat  %>%
+  group_by(spec_id, spec_tax, year) %>%
+  summarize(n_cor = n(),
+            len_sum = round(sum(len, na.rm = T)/1000, digits = 2), # convert to km
+            len_mean = round(mean(len, na.rm = T)/1000, digits = 2), # convert to km
+            hsi_mean =round(mean(hsi_mean_lc_2050, na.rm = T)/1000, digits = 2),
+            hsi_sum =round(sum(hsi_sum_lc_2050, na.rm = T)/1000, digits = 2),
+            cs_mean = round(mean(circ_mean_lc_2050, na.rm = T), digits = 2),
+            forest_prop_cur = round(mean(num_forest_cur/(len/1000), na.rm = T), digits = 2), # convert to km
+            forest_prop = round(mean(num_forest_2050/(len/1000), na.rm = T), digits = 2), # convert to km
+            forest_prop_lc_2050 = round(mean(num_forest_2050/(len/1000), na.rm = T), digits = 2), # convert to km
+            forest_prop_lc_2080 = round(mean(num_forest_2080/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_opp_mean_km = round(mean(cost_oppcost_sum_lc_2050, na.rm = T), digits = 2),
+            cost_resto_mean_km_cur = round(mean(cost_resto_sum_cur, na.rm = T), digits = 2),
+            cost_resto_mean_km = round(mean(cost_resto_sum_lc_2050, na.rm = T), digits = 2),
+            cost_resto_mean_km_lc_2050 = round(mean(cost_resto_sum_lc_2050, na.rm = T), digits = 2),
+            cost_resto_mean_km_lc_2080 = round(mean(cost_resto_sum_lc_2080, na.rm = T), digits = 2),
+            cost_resto_sum_km_cur = round(sum(cost_resto_sum_cur, na.rm = T), digits = 2),
+            cost_resto_sum_km = round(sum(cost_resto_sum_lc_2050, na.rm = T), digits = 2),
+            cost_resto_sum_km_lc_2050 = round(sum(cost_resto_sum_lc_2050, na.rm = T), digits = 2),
+            cost_resto_sum_km_lc_2080 = round(sum(cost_resto_sum_lc_2080, na.rm = T), digits = 2),
+            cost_div_len_opp_km = round(mean(cost_oppcost_sum_lc_2050/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km_cur = round(sum(cost_resto_sum_cur/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km = round(sum(cost_resto_sum_lc_2050/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km_lc_2050 = round(sum(cost_resto_sum_lc_2050/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km_lc_2080 = round(sum(cost_resto_sum_lc_2080/(len/1000), na.rm = T), digits = 2), # convert to km
+            t10_mean_cur = round(mean(t_10_mean_cur , na.rm = T), digits = 2),
+            t10_mean = round(mean(t_10_mean_2050 , na.rm = T), digits = 2),
+            t10_mean_lc_2050 = round(mean(t_10_mean_2050 , na.rm = T), digits = 2),
+            t10_mean_lc_2080 = round(mean(t_10_mean_2080 , na.rm = T), digits = 2),
+            t25_mean_cur = round(mean(t_25_mean_cur, na.rm = T), digits = 2),
+            t25_mean = round(mean(t_25_mean_2050, na.rm = T), digits = 2),
+            t25_mean_lc_2050 = round(mean(t_25_mean_2050, na.rm = T), digits = 2),
+            t25_mean_lc_2080 = round(mean(t_25_mean_2080, na.rm = T), digits = 2),
+            cost_div_num_cur = round(mean(cost_resto_sum_cur/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_div_num = round(mean(cost_resto_sum_lc_2050/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_div_num_lc_2050 = round(mean(cost_resto_sum_lc_2050/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_div_num_lc_2080 = round(mean(cost_resto_sum_lc_2080/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_opp_div_num = round(mean(cost_oppcost_sum_lc_2050/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_all_div = round((mean(cost_oppcost_sum_lc_2050, na.rm = T))+(mean(cost_oppcost_sum_lc_2050, na.rm = T)), digits = 2),
+            cost_all_div_num = round((mean(cost_oppcost_sum_lc_2050/n_cor, na.rm = T))+(mean(cost_resto_sum_lc_2050/n_cor, na.rm = T)), digits = 2) # divided by number of corridors
+  ) %>% data.frame()
+
+lc_2080_dat_sub <- lc_2080_dat  %>%
+  group_by(spec_id, spec_tax, year) %>%
+  summarize(n_cor = n(),
+            len_sum = round(sum(len, na.rm = T)/1000, digits = 2), # convert to km
+            len_mean = round(mean(len, na.rm = T)/1000, digits = 2), # convert to km
+            hsi_mean =round(mean(hsi_mean_lc_2080, na.rm = T)/1000, digits = 2),
+            hsi_sum =round(sum(hsi_sum_lc_2080, na.rm = T)/1000, digits = 2),
+            cs_mean = round(mean(circ_mean_lc_2080, na.rm = T), digits = 2),
+            forest_prop_cur = round(mean(num_forest_cur/(len/1000), na.rm = T), digits = 2), # convert to km
+            forest_prop_lc_2050 = round(mean(num_forest_2050/(len/1000), na.rm = T), digits = 2), # convert to km
+            forest_prop = round(mean(num_forest_2080/(len/1000), na.rm = T), digits = 2), # convert to km
+            forest_prop_lc_2080 = round(mean(num_forest_2080/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_opp_mean_km = round(mean(cost_oppcost_sum_lc_2080, na.rm = T), digits = 2),
+            cost_resto_mean_km_cur = round(mean(cost_resto_sum_cur, na.rm = T), digits = 2),
+            cost_resto_mean_km_lc_2050 = round(mean(cost_resto_sum_lc_2050, na.rm = T), digits = 2),
+            cost_resto_mean_km = round(mean(cost_resto_sum_lc_2080, na.rm = T), digits = 2),
+            cost_resto_mean_km_lc_2080 = round(mean(cost_resto_sum_lc_2080, na.rm = T), digits = 2),
+            cost_resto_sum_km_cur = round(sum(cost_resto_sum_cur, na.rm = T), digits = 2),
+            cost_resto_sum_km_lc_2050 = round(sum(cost_resto_sum_lc_2050, na.rm = T), digits = 2),
+            cost_resto_sum_km = round(sum(cost_resto_sum_lc_2080, na.rm = T), digits = 2),
+            cost_resto_sum_km_lc_2080 = round(sum(cost_resto_sum_lc_2080, na.rm = T), digits = 2),
+            cost_div_len_opp_km = round(mean(cost_oppcost_sum_lc_2080/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km_cur = round(sum(cost_resto_sum_cur/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km_lc_2050 = round(sum(cost_resto_sum_lc_2050/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km = round(sum(cost_resto_sum_lc_2080/(len/1000), na.rm = T), digits = 2), # convert to km
+            cost_div_len_resto_km_lc_2080 = round(sum(cost_resto_sum_lc_2080/(len/1000), na.rm = T), digits = 2), # convert to km
+            t10_mean_cur = round(mean(t_10_mean_cur , na.rm = T), digits = 2),
+            t10_mean_lc_2050 = round(mean(t_10_mean_2050 , na.rm = T), digits = 2),
+            t10_mean = round(mean(t_10_mean_2080 , na.rm = T), digits = 2),
+            t10_mean_lc_2080 = round(mean(t_10_mean_2080 , na.rm = T), digits = 2),
+            t25_mean_cur = round(mean(t_25_mean_cur, na.rm = T), digits = 2),
+            t25_mean_lc_2050 = round(mean(t_25_mean_2050, na.rm = T), digits = 2),
+            t25_mean = round(mean(t_25_mean_2080, na.rm = T), digits = 2),
+            t25_mean_lc_2080 = round(mean(t_25_mean_2080, na.rm = T), digits = 2),
+            cost_div_num_cur = round(mean(cost_resto_sum_cur/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_div_num_lc_2050 = round(mean(cost_resto_sum_lc_2050/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_div_num = round(mean(cost_resto_sum_lc_2080/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_div_num_lc_2080 = round(mean(cost_resto_sum_lc_2080/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_opp_div_num = round(mean(cost_oppcost_sum_lc_2080/n_cor, na.rm = T), digits = 2), # divided by number of corridors
+            cost_all_div = round((mean(cost_oppcost_sum_lc_2080, na.rm = T))+(mean(cost_oppcost_sum_lc_2080, na.rm = T)), digits = 2),
+            cost_all_div_num = round((mean(cost_oppcost_sum_lc_2080/n_cor, na.rm = T))+(mean(cost_resto_sum_lc_2080/n_cor, na.rm = T)), digits = 2) # divided by number of corridors
+  ) %>% data.frame()
+
+
+all_data <- rbind(cur_dat_sub, lc_2050_dat_sub, lc_2080_dat_sub)
+```
+
+## load nodes
+
+```{r}
+all_data_list <- split(all_data, seq(nrow(all_data)))
+
+fun_num_node <- function(x){
+  i <- x$spec_id
+  node_name <- ifelse(x$year == 2020, "CUR", ifelse(x$year == 2050, "lc_2050", "lc_2080"))
+  scen_nam <- ifelse(x$year == 2020, "cur", ifelse(x$year == 2050, "lc_2050", "lc_2080"))
+  node <- st_read(here("data-raw", "geo-raw", "subset_corrected_20190805", paste0(scen_nam, "/node_123_", node_name, "_sp_", i, "_utm.shp")),stringsAsFactors = F)
+  x$n_node <- nrow(node)
+  return(x)
+}
+
+all_data_2 <- do.call(rbind, lapply(all_data_list, fun_num_node))
+
+saveRDS(all_data_2, here("output", "lcp_trends_20240722.RDS"))
+```
+
+# END NOT RUN 
+
+# Rename all_data to lcp_trends and save without geometry as csv
+
+```{r}
+#lcptrends2 <- readRDS(here("output", "lcp_trends_20240722.RDS"))
+all_data_2 <- readRDS(here("output", "lcp_trends_20240722.RDS"))
+mytmp <- all_data_2
+
+## drop the geometry to make analyses faster
+tmpcol <- which((names(mytmp) == 'geometry'))
+lcptrends <- mytmp[, - tmpcol]
+
+```
+
+
+# Statistics 
+
+The following outputs are saved under Appendix 2 files on the folder 'results'
+```{r}
+names(lcptrends)
+##[1] "spec_id"                       "spec_tax"                      "year"                         
+##[4] "n_cor"                         "len_sum"                       "len_mean"                     
+##[7] "hsi_mean"                      "hsi_sum"                       "cs_mean"                      
+##[10] "forest_prop"                   "forest_prop_cur"               "forest_prop_lc_2050"          
+##[13] "forest_prop_lc_2080"           "cost_opp_mean_km"              "cost_resto_mean_km"           
+##[16] "cost_resto_mean_km_cur"        "cost_resto_mean_km_lc_2050"    "cost_resto_mean_km_lc_2080"   
+##[19] "cost_resto_sum_km"             "cost_resto_sum_km_cur"         "cost_resto_sum_km_lc_2050"    
+##[22] "cost_resto_sum_km_lc_2080"     "cost_div_len_opp_km"           "cost_div_len_resto_km"        
+##[25] "cost_div_len_resto_km_cur"     "cost_div_len_resto_km_lc_2050" "cost_div_len_resto_km_lc_2080"
+##[28] "t10_mean"                      "t10_mean_cur"                  "t10_mean_lc_2050"             
+##[31] "t10_mean_lc_2080"              "t25_mean"                      "t25_mean_cur"                 
+##[34] "t25_mean_lc_2050"              "t25_mean_lc_2080"              "cost_div_num"                 
+##[37] "cost_div_num_cur"              "cost_div_num_lc_2050"          "cost_div_num_lc_2080"         
+##[40] "cost_opp_div_num"              "cost_all_div"                  "cost_all_div_num"             
+##[43] "n_node" 
+```
+
+
+## number of nodes
+
+```{r}
+lcptrends$response <- lcptrends$n_node #change here!
+
+lcptrends %>%
+    group_by(year,spec_tax) %>% 
+    summarise(median = median(response)) 
+
+
+my_model <- glm(response ~ year*spec_tax, family = 'poisson', data = lcptrends) ## change depending on response
+pander(summary(my_model))
+(summary(my_model))
+
+a <- ggpredict(my_model, terms = c("year", "spec_tax")) |> plot()
+a +labs(y= "number of nodes", x = "time slice", title = '') + ## change 
+   theme_d6(bg = "white") + 
+   theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+ggsave(path = here("plots"), filename = "glm_num_nodes.png", device = "png",
+       width = 6, height = 8)
+```
+
+## number of corridors
+
+```{r}
+lcptrends$response <- lcptrends$n_cor #change response here!
+
+lcptrends %>%
+    group_by(year,spec_tax) %>% 
+    summarise(median = median(response)) 
+
+
+my_model <- glm(response ~ year*spec_tax, family = 'poisson', data = lcptrends) ## change family depending on response
+pander(summary(my_model))
+(summary(my_model))
+
+a <- ggpredict(my_model, terms = c("year", "spec_tax")) |> plot()
+a +labs(color= 'Taxon',y= "number of corridors", x = "time slice", title = '') + ## change 
+   theme_d6(bg = "white") + 
+   theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+ggsave(path = here("plots"), filename = "glm_num_cors.png", device = "png", ##change
+       dpi=300)
+```
+
+## total length
+
+```{r}
+lcptrends$response <- lcptrends$len_sum #change response here!
+
+lcptrends %>%
+    group_by(year,spec_tax) %>% 
+    summarise(median = median(response)) 
+
+
+my_model <- glm(response ~ year*spec_tax, family = Gamma(link="log"), data = lcptrends) ## change family depending on response
+#pander(summary(my_model))
+(summary(my_model))
+
+a <- ggpredict(my_model, terms = c("year", "spec_tax")) |> plot()
+a +labs(color= 'Taxon',y= "total length", x = "time slice", title = '') + ## change 
+   theme_d6(bg = "white") + 
+   theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+ggsave(path = here("plots"), filename = "glm_tot_length.png", device = "png", ##change
+       width = 6, height = 8)
+```
+
+
+## HSI mean
+
+```{r}
+lcptrends$response <- lcptrends$hsi_mean #change response here!
+
+lcptrends %>%
+    group_by(year,spec_tax) %>% 
+    summarise(median = median(response)) 
+
+
+my_model <- glm(response ~ year*spec_tax, family = 'binomial', data = lcptrends) ## change family depending on response
+#pander(summary(my_model))
+(summary(my_model))
+
+a <- ggpredict(my_model, terms = c("year", "spec_tax")) |> plot()
+a +labs(color= 'Taxon',y= "mean HSI", x = "time slice", title = '') + ## change 
+   theme_d6(bg = "white") + 
+   theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+ggsave(path = here("plots"), filename = "glm_mean_hsi.png", device = "png", ##change
+       width = 6, height = 8)
+```
+
+
+## Proportion of corridor forested
+
+Approximating a proportion, because we calculated the number of forested cells underlying a corridor line. If diagonal, this could be two forest cells that are cut by the corridor line. In that case, we reset the proportion to 1.
+```{r}
+lcptrends$response <- lcptrends$forest_prop #change response here!
+range(lcptrends$forest_prop) ## 6 corridors have prob > 1....
+dummy <- which(lcptrends$forest_prop > 1) ; lcptrends[dummy,]
+lcptrends$forest_prop[dummy] <- 1
+lcptrends$response <- lcptrends$forest_prop #set again
+
+
+lcptrends %>%
+    group_by(year,spec_tax) %>% 
+    summarise(median = median(response)) 
+
+
+my_model <- glm(response ~ year*spec_tax, family = 'binomial', data = lcptrends) ## change family depending on response
+#pander(summary(my_model))
+(summary(my_model))
+
+a <- ggpredict(my_model, terms = c("year", "spec_tax")) |> plot()
+a +labs(color= 'Taxon',y= "prop. corridors forested", x = "time slice", title = '') + ## change 
+   theme_d6(bg = "white") + 
+   theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+ggsave(path = here("plots"), filename = "glm_prop_for.png", device = "png", ##change
+       width = 6, height = 8)
+```
+
+
+
+## Restoration costs mean
+
+```{r}
+# divided by 10 (/1000*100). for 1000 US DOllar, from hectar to km2
+lcptrends$response <- lcptrends$cost_div_num/10 #cost_resto_mean_km #change response here!
+
+lcptrends %>%
+    group_by(year,spec_tax) %>% 
+    summarise(median = median(response)) 
+
+
+my_model <- glm(response ~ year*spec_tax, family = Gamma('log'),  data = lcptrends) ## change family depending on response
+#pander(summary(my_model))
+(summary(my_model))
+
+a <- ggpredict(my_model, terms = c("year", "spec_tax")) |> plot()
+a +labs(color= 'Taxon',y= "restoration costs", x = "time slice", title = '') + ## change 
+   theme_d6(bg = "white") + 
+   theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+ggsave(path = here("plots"), filename = "glm_resto_costs.png", device = "png", ##change
+       width = 6, height = 8)
+```
+
+
+## Opportunity costs mean
+
+```{r}
+lcptrends$response <- lcptrends$cost_opp_div_num/1000 #change response here!
+
+lcptrends %>%
+    group_by(year,spec_tax) %>% 
+    summarise(median = median(response)) 
+
+
+my_model <- glm(response ~ year*spec_tax, family = Gamma('log'), data = lcptrends) ## change family depending on response
+#pander(summary(my_model))
+(summary(my_model))
+
+a <- ggpredict(my_model, terms = c("year", "spec_tax")) |> plot()
+a +labs(color= 'Taxon',y= "opportunity costs / 1000", x = "time slice", title = '') + ## change 
+   theme_d6(bg = "white") + 
+   theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+ggsave(path = here("plots"), filename = "glm_opp_costs.png", device = "png", ##change
+       width = 6, height = 8)
+```
+
+
+# Boxplots in d6 theme
+
+Figure 2
+
+```{r}
+library(d6)
+
+d6::theme_d6()
+```
+
+## number of nodes
+
+```{r}
+bp_node <- 
+  ggplot(lcptrends, aes(x=as.factor(year), y=n_node)) +
+  geom_boxplot(outlier.size = -1, position=position_dodge(0.9), fill = "grey90") +
+  coord_cartesian(ylim = c(0,380)) +
+  labs(x = "Timeslice", y = "") + # add y axis name if you want
+  geom_jitter(aes(color=as.factor(spec_tax)), shape=16, position=position_jitter(0.2), alpha =0.9, size = 3.3) +
+  scale_color_viridis_d(option = "viridis") + # other colorpalettes didn't fit that good. Some colors were too bright. Turbo is an option
+  labs(color='Taxon', title = "a) Number of nodes") +
+  theme_d6(bg = "white") + # the background can be transparent if needed
+  theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+
+ggsave(bp_node, path = here("plots"), filename = "Fig2a_boxplot_num_nodes_viridis.png", device = "png",
+       width = 6,
+       height = 8)
+```
+
+## number of corridors
+
+```{r}
+bp_cor <- 
+  ggplot(lcptrends, aes(x=as.factor(year), y=n_cor)) +
+  geom_boxplot(outlier.size = -1, position=position_dodge(0.9), fill = "grey90") +
+  labs(x = "Timeslice", y = "") +
+  geom_jitter(aes(color=as.factor(spec_tax)), shape=16, position=position_jitter(0.2), alpha =0.9, size = 3.3) +
+  scale_color_viridis_d(option = "viridis") + 
+  labs(color='Taxon', title = "b) Number of corridors") +
+  theme_d6(bg = "white") +
+  theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+
+ggsave(bp_cor, path = here("plots"), filename = "Fig2b_boxplot_num_corridors_viridis.png", device = "png",
+       width = 6,
+       height = 8)
+
+```
+
+## sum of length
+
+```{r}
+bp_sum_len <- 
+  ggplot(lcptrends, aes(x=as.factor(year), y=len_sum)) +
+  geom_boxplot(outlier.size = -1, position=position_dodge(0.9), fill = "grey90") +
+  labs(x = "Timeslice", y = "") +
+  geom_jitter(aes(color=as.factor(spec_tax)), shape=16, position=position_jitter(0.2), alpha =0.9, size = 3.3) +
+  scale_color_viridis_d(option = "viridis") + 
+  labs(color='Taxon', title = "c) Sum of length") +
+  theme_d6(bg = "white") +
+  theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+
+ggsave(bp_sum_len, path = here("plots"), 
+       filename = "Fig2c_boxplot_sum_of_length_viridis.png", 
+       device = "png",
+       width = 6,
+       height = 8)
+
+```
+
+
+## mean hsi
+
+```{r}
+bp_mean_hsi <- 
+  ggplot(lcptrends, aes(x=as.factor(year), y=hsi_mean)) +
+  geom_boxplot(outlier.size = -1, position=position_dodge(0.9), fill = "grey90") +
+  coord_cartesian(ylim = c(0.3,0.8)) +
+  labs(x = "Timeslice", y = "") +
+  geom_jitter(aes(color=as.factor(spec_tax)), shape=16, position=position_jitter(0.2), alpha =0.9, size = 3.3) +
+  scale_color_viridis_d(option = "viridis") + 
+  labs(color='Taxon', title = "d) Mean HSI") +
+  theme_d6(bg = "white") +
+  theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+
+ggsave(bp_mean_hsi, path = here("plots"), 
+       filename = "Fig2d_boxplot_mean_hsi_viridis.png", 
+       device = "png",
+       width = 6,
+       height = 8)
+
+```
+
+## proportion of forest
+
+```{r}
+bp_prop_for <- 
+  ggplot(lcptrends, aes(x=as.factor(year), y=forest_prop)) +
+  geom_boxplot(outlier.size = -1, position=position_dodge(0.9), fill = "grey90") +
+  coord_cartesian(ylim = c(0,1)) +
+  labs(x = "Timeslice", y = "") +
+  geom_jitter(aes(color=as.factor(spec_tax)), shape=16, position=position_jitter(0.2), alpha =0.9, size = 3.3) +
+  scale_color_viridis_d(option = "viridis") + 
+  labs(color='Taxon', title = "e) Proportion of forest") +
+  theme_d6(bg = "white") +
+  theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+
+ggsave(bp_prop_for, path = here("plots"), 
+       filename = "Fig2e_boxplot_prop_forest_viridis.png", 
+       device = "png",
+       width = 6,
+       height = 8)
+
+```
+
+## mean restoration cost divided by the number of corridors
+
+```{r}
+bp_mean_resto_cost <- 
+  ggplot(lcptrends, aes(x=as.factor(year), y=cost_div_num/10)) +
+  geom_boxplot(outlier.size = -1, position=position_dodge(0.9), fill = "grey90") +
+  coord_cartesian(ylim = c(0, 250)) +
+  labs(x = "Timeslice", y = "") +
+  geom_jitter(aes(color=as.factor(spec_tax)), shape=16, position=position_jitter(0.2), alpha =0.9, size = 3.3) +
+  scale_color_viridis_d(option = "viridis") + 
+  labs(color='Taxon', title = "f) Mean restoration costs divided by the\nnumber of corridors (1000s US$/km² and corridor)") +
+  theme_d6(bg = "white")  +
+  theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+
+ggsave(bp_mean_resto_cost, path = here("plots"), 
+       filename = "Fig2f_boxplot_mean_resto_cost_divided_by_n_corridor_viridis.png", 
+       device = "png",
+       width = 6,
+       height = 8)
+```
+
+## mean opportunity cost divided by the number of corridors
+
+```{r}
+bp_mean_opp_cost <- 
+  ggplot(lcptrends, aes(x=as.factor(year), y=cost_opp_div_num/1000)) +
+  geom_boxplot(outlier.size = -1, position=position_dodge(0.9), fill = "grey90") +
+  coord_cartesian(ylim = c(0, 3000)) +
+  labs(x = "Timeslice", y = "") +
+  geom_jitter(aes(color=as.factor(spec_tax)), shape=16, position=position_jitter(0.2), alpha =0.9, size = 3.3) +
+  scale_color_viridis_d(option = "viridis") + 
+  labs(color='Taxon', title = "g) Mean opportunity costs divided by the\nnumber of corridors (1000s US$/km² and corridor)") +
+  theme_d6(bg = "white")  +
+  theme(legend.position = c(1.5, 0.8), 
+        axis.text.y = element_text(angle = 90, hjust = 0.5),
+        axis.text = element_text(size = 20),
+        axis.title = element_text(size = 14),
+        plot.title = element_text(size=14))
+
+ggsave(bp_mean_opp_cost, path = here("plots"), 
+       filename = "Fig2g_boxplot_mean_opp_cost_divided_by_n_corridor_viridis.png", 
+       device = "png",
+       width = 6,
+       height = 8)
+```
+

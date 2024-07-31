@@ -1,0 +1,127 @@
+---
+title: "HSI Maps for Circuitscape" 
+
+author:
+    - name: "Moritz Wenzler-Meya"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 
+    - name: "Stephanie Kramer-Schadt"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id:
+date: "`r Sys.Date()`"
+output: 
+    distill::distill_article:
+        highlight: kate     
+        code_folding: false  
+        toc: true            
+        toc_depth: 2         
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+                      dev = "ragg_png", fig.width = 9, fig.height = 6, dpi = 600, retina = 1)
+Sys.setlocale("LC_TIME", "C")
+```
+
+# Setup
+
+```{r packages}
+sapply(list("sf", "tidyverse", "terra", "here", "raster", "sp"), 
+       library, character.only = TRUE, logical.return = TRUE)
+```
+
+# load hsi maps for all time slices and plot them
+
+## hsi 2020
+
+```{r}
+hsi_2020_l <- list.files(path = here::here("data", "raw", "hsi_maps", "hsi_2020"),
+                    pattern = ".asc$",
+                    full.names = TRUE,
+                    recursive = TRUE) 
+
+lapply(hsi_2020_l, function(x){ 
+  ras <- terra::rast(x)
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(ras)) + 
+  scale_fill_viridis_c(na.value = "transparent", name = "", option = "turbo") + 
+      ggplot2::coord_sf(expand = FALSE) + 
+   ggtitle("HSI 2020") + 
+  theme_void()
+
+ggsave(here("plots", "hsi_plots_2020" ,paste0("hsi_2020_species_", 
+                           stringi::stri_replace_last_fixed(unlist(strsplit(x, "_"))[[length(unlist(strsplit(x, "_")))]], ".asc", ""),
+                           ".png")), dpi = 300)
+  
+})
+```
+
+## hsi 2050
+
+```{r}
+hsi_2050_l <- list.files(path = here::here("data", "raw", "hsi_maps", "hsi_2050"),
+                    pattern = ".asc$",
+                    full.names = TRUE,
+                    recursive = TRUE) 
+
+lapply(hsi_2050_l, function(x){
+  ras <- terra::rast(x)
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(ras)) + 
+  scale_fill_viridis_c(na.value = "transparent", name = "", option = "turbo") + 
+      ggplot2::coord_sf(expand = FALSE) + 
+   ggtitle("HSI 2050") + 
+  theme_void()
+
+ggsave(here("plots", "hsi_plots_2050" ,paste0("hsi_2050_species_", 
+                           stringi::stri_replace_last_fixed(unlist(strsplit(x, "_"))[[length(unlist(strsplit(x, "_")))]], ".asc", ""),
+                           ".png")), dpi = 300)
+  
+})
+```
+
+## hsi 2080
+
+```{r}
+hsi_2080_l <- list.files(path = here::here("data", "raw", "hsi_maps", "hsi_2080"),
+                    pattern = ".asc$",
+                    full.names = TRUE,
+                    recursive = TRUE) 
+
+lapply(hsi_2080_l, function(x){  
+  ras <- terra::rast(x)
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(ras)) + 
+  scale_fill_viridis_c(na.value = "transparent", name = "", option = "turbo") + 
+      ggplot2::coord_sf(expand = FALSE) + 
+   ggtitle("HSI 2080") + 
+  theme_void()
+
+ggsave(here("plots", "hsi_plots_2080" ,paste0("hsi_2080_species_", 
+                           stringi::stri_replace_last_fixed(unlist(strsplit(x, "_"))[[length(unlist(strsplit(x, "_")))]], ".asc", ""),
+                           ".png")), dpi = 300)
+  
+})
+
+```
+
+
+</details>
+
+
+***
+
+<details><summary>Session Info</summary>
+
+```{r sessionInfo}
+## DO NOT REMOVE!
+Sys.time()
+#git2r::repository() ## uncomment if you are using GitHub
+sessionInfo()
+```
+
+</details>

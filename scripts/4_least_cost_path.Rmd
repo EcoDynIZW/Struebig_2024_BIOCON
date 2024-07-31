@@ -1,0 +1,716 @@
+---
+title: "leastcostpath" 
+
+author:
+    - name: "Moritz Wenzler-Meya"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id:
+    - name: "Stephanie Kramer-Schadt"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 
+date: "`r Sys.Date()`"
+output: 
+    distill::distill_article:
+        highlight: kate
+        code_folding: false  
+        toc: true            
+        toc_depth: 2         
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+                      dev = "ragg_png", fig.width = 9, fig.height = 6, dpi = 600, retina = 1)
+Sys.setlocale("LC_TIME", "C")
+```
+
+# Setup
+
+```{r packages}
+sapply(list("sf", "tidyverse", "terra", "here" , "d6geodata", "gdistance", "viridis"), 
+       library, character.only = TRUE, logical.return = TRUE)
+```
+
+# least cost path
+
+## data
+
+```{r}
+nodes_all <- st_read(here::here("data", "raw", "nodes_all.gpkg")) 
+```
+
+## lcp 2020
+
+```{r}
+nodes_2020_l <- list.files(here::here("data", "processed", "node_layers", "nodes_2020"),
+                        pattern = ".gpkg",
+                        full.names = TRUE)
+
+circ_2020_l <- list.files(here::here("data", "processed", "circuitscape_2020"),
+                        pattern = "cum_curmap.asc$",
+                        full.names = TRUE,
+                        recursive = TRUE)
+
+for(i in c(5, 49)){
+  
+  # nodes layer respective species
+  nodes_lyr <- st_read(nodes_2020_l[str_detect(nodes_2020_l, pattern = paste0("species_", i, ".gpkg")) %in% TRUE])
+  
+  # circuitscape respective species
+  circ_map <- rast(circ_2020_l[str_detect(circ_2020_l, pattern = paste0("species_", i, "_")) %in% TRUE])
+  
+  # set zeros to NA
+  circ_map[which(values(circ_map)==0)]<-NA
+  
+  # reproject to metric projection
+  circ_map_utm <- terra::project(circ_map, as.character(st_crs(nodes_lyr))[[2]])
+  
+  # remove nodes from circuitscape map with a 1000m buffer
+  circ_map_utm_masked <- mask(circ_map_utm, 
+                              nodes_all |> 
+                                st_transform(as.character(st_crs(nodes_lyr))[[2]]) |> # transform to utm
+                                st_buffer(1000), # add buffer to avoid edge effects
+                              inverse = T)
+  
+  # get maximum value outside of protected areas
+  max_circ <- max(values(circ_map_utm_masked),na.rm = T) 
+  
+  circ_map_utm_max <-   circ_map_utm
+  
+  # set values inside protected areas to max values from outside
+  circ_map_utm_max[which(values(circ_map_utm)>=max_circ)] <- max_circ 
+  
+  # invert the circuitscape map as preparation for the least cost path
+  circ_map_utm_inv <- (max(values(circ_map_utm_max),na.rm=T)+1)-circ_map_utm_max 
+  
+  # centroids from nodes layer
+  centroids_lyr <- st_centroid(nodes_lyr |> arrange(id))
+   
+  # check if nodes layer are laying outside of nodes layer 
+  check_centroids <- extract(circ_map_utm_inv, centroids_lyr, inside = TRUE)
+  
+  # get centroids that are outside of their nodes 
+  check_centroids_2 <- check_centroids[which(is.na(check_centroids)[,2] == TRUE),]
+   
+  # create a raster from circuitscape map in higher resolution to exchange them with centroids that are 
+  # outside of their node
+  centroid_ras <- terra::rasterize(nodes_all, circ_map_utm_inv |> disagg(10), field = "id")
+  
+  # transform to polygons 
+  centroid_for_change <- circ_map_utm_inv |> 
+     terra::as.polygons() |> 
+     st_as_sf() 
+  
+  # intersect to get only areas covered by nodes 
+  centroid_inter <- st_intersection(nodes_lyr, centroid_for_change) 
+   
+  # get centroids of intersected layers
+  centroids_inter_sf <- st_centroid(centroid_inter) |> 
+     group_by(id) |> 
+     summarise(id = first(id)) |> 
+     st_cast("POINT")
+  
+  # exchange centroids that are not on the nodes with new created from the intersection
+  centroids_sf <- data.frame(centroids_lyr[-check_centroids_2$ID,]) |> 
+     full_join(data.frame(centroids_inter_sf[check_centroids_2$ID,])) |> 
+     arrange(id) |> 
+     st_as_sf() 
+
+  trans_lyr <- gdistance::transition(1/raster::raster(circ_map_utm_inv), mean, directions = 8, symm=F)
+  
+  lcp_list <- lapply(1:nrow(centroids_sf), function(j){
+
+    # loop over all centroids
+    if(j != nrow(centroids_sf)) {
+      
+      # calculate shortest path one to all without repeating the node that was already used
+      paths <- gdistance::shortestPath(trans_lyr, 
+                               as(centroids_sf[j,], "Spatial"), 
+                               as(centroids_sf[-c(1:j),], "Spatial"), 
+                               output = "SpatialLines")
+      
+      # make it sf
+      paths_sf <- paths |> 
+        as("sf")
+      
+      # add the length of each line
+      paths_sf$len <- st_length(paths_sf) |> as.numeric()
+      
+      # set crs
+      st_crs(paths_sf) <- st_crs(centroids_sf)
+      
+      # remove zero length lines and make all to single lines
+      paths_sf2 <- dplyr::filter(paths_sf, len > 0)
+      paths_sf3 <- st_cast(st_cast(paths_sf2), "LINESTRING")
+      paths_sf4 <- st_union(paths_sf3, by_feature = FALSE )
+      paths_sf5 <- st_cast(st_cast(paths_sf4), "LINESTRING")
+      
+      paths_sf5 <- st_cast(st_sf(paths_sf5), "LINESTRING")
+      
+      # custom clipping function    
+      st_erase = function(x, y) st_difference(x, st_union(st_combine(y)))
+      
+      # remove lines inside all nodes     
+       paths_sf_no_nodes_uni_buf <- st_erase(paths_sf5, nodes_all |>
+                                               st_transform(st_crs(paths_sf)))
+       
+      # make all to single lines again
+      paths_sf_no_nodes_uni_buf_l <- st_cast(st_sf(paths_sf_no_nodes_uni_buf), "LINESTRING")
+      
+      return(paths_sf_no_nodes_uni_buf_l)
+      
+    }
+  }
+  )
+  
+  # combine all shortest paths
+  shortest_paths <- do.call(bind_rows, lcp_list)
+  
+  # add length again
+  shortest_paths$len <- st_length(shortest_paths)
+  
+  shortest_paths_2 <- shortest_paths |> 
+    group_by(len) |> 
+    mutate(id = cur_group_id())
+
+ 
+    shortest_paths_uni <- unique(shortest_paths_2)
+    shortest_paths_start_end <-  do.call(bind_rows, lapply(1:nrow(shortest_paths_uni), function(x){
+    
+      path <- shortest_paths_uni[x,]
+    
+    path$start_x <- st_coordinates(path)[1,1] 
+    path$start_y <- st_coordinates(path)[1,2] 
+    path$end_x <- st_coordinates(path)[nrow(st_coordinates(path)),1] 
+    path$end_y <- st_coordinates(path)[nrow(st_coordinates(path)),2] 
+    
+    path$start_node <- as.numeric(as.character(st_intersects(
+                    st_as_sf(data.frame(path |> dplyr::select(start_x, start_y)),
+                            coords = c("start_x", "start_y"),
+                            crs = st_crs(path)),
+                    nodes_all |> st_transform(st_crs(path)))))
+    
+    path$end_node <- as.numeric(as.character(st_intersects(
+                    st_as_sf(data.frame(path |> dplyr::select(end_x, end_y)),
+                            coords = c("end_x", "end_y"),
+                            crs = st_crs(path)),
+                    nodes_all |> st_transform(st_crs(path)))))
+    
+    
+    path_2 <- path |> 
+      mutate(start_end = paste(start_node, end_node, sep = "_"))
+    
+    return(path_2)
+    
+    }))
+  
+    shortest_paths_start_end_sub <- shortest_paths_start_end |> 
+      drop_na(start_node, end_node) |> 
+      filter(!start_node %in% end_node) |> 
+      distinct(start_end, .keep_all = TRUE)
+
+  st_write(shortest_paths_start_end_sub,
+         dsn = here("data", "processed", "lcp_2020", paste0("lcp_",i,"_2020.gpkg")))
+
+ }
+
+```
+
+
+## lcp 2050
+
+```{r}
+nodes_2050_l <- list.files(here::here("data", "processed", "node_layers", "nodes_2050"),
+                        pattern = ".gpkg",
+                        full.names = TRUE)
+
+circ_2050_l <- list.files(here::here("data", "processed", "circuitscape_2050"),
+                        pattern = "cum_curmap.asc$",
+                        full.names = TRUE,
+                        recursive = TRUE)
+
+for(i in c(5, 49)){
+  
+  # nodes layer respective species
+  nodes_lyr <- st_read(nodes_2050_l[str_detect(nodes_2050_l, pattern = paste0("species_", i, ".gpkg")) %in% TRUE])
+  
+  # circuitscape respective species
+  circ_map <- rast(circ_2050_l[str_detect(circ_2050_l, pattern = paste0("species_", i, "_")) %in% TRUE])
+  
+  # set zeros to NA
+  circ_map[which(values(circ_map)==0)]<-NA
+  
+  # reproject to metric projection
+  circ_map_utm <- terra::project(circ_map, as.character(st_crs(nodes_lyr))[[2]])
+  
+  # remove nodes from circuitscape map with a 1000m buffer
+  circ_map_utm_masked <- mask(circ_map_utm, 
+                              nodes_all |> 
+                                st_transform(as.character(st_crs(nodes_lyr))[[2]]) |> # transform to utm
+                                st_buffer(1000), # add buffer to avoid edge effects
+                              inverse = T)
+  
+  # get maximum value outside of protected areas
+  max_circ <- max(values(circ_map_utm_masked),na.rm = T) 
+  
+  circ_map_utm_max <-   circ_map_utm
+  
+  # set values inside protected areas to max values from outside
+  circ_map_utm_max[which(values(circ_map_utm)>=max_circ)] <- max_circ 
+  
+  # invert the circuitscape map as preparation for the least cost path
+  circ_map_utm_inv <- (max(values(circ_map_utm_max),na.rm=T)+1)-circ_map_utm_max 
+  
+  # centroids from nodes layer
+  centroids_lyr <- st_centroid(nodes_lyr |> arrange(id))
+   
+  # check if nodes layer are laying outside of nodes layer 
+  check_centroids <- extract(circ_map_utm_inv, centroids_lyr, inside = TRUE)
+  
+  # get centroids that are outside of their nodes 
+  check_centroids_2 <- check_centroids[which(is.na(check_centroids)[,2] == TRUE),]
+   
+  # create a raster from circuitscape map in higher resolution to exchange them with centroids that are 
+  # outside of their node
+  centroid_ras <- terra::rasterize(nodes_all, circ_map_utm_inv |> disagg(10), field = "id")
+  
+  # transform to polygons 
+  centroid_for_change <- circ_map_utm_inv |> 
+     terra::as.polygons() |> 
+     st_as_sf() 
+  
+  # intersect to get only areas covered by nodes 
+  centroid_inter <- st_intersection(nodes_lyr, centroid_for_change) 
+   
+  # get centroids of intersected layers
+  centroids_inter_sf <- st_centroid(centroid_inter) |> 
+     group_by(id) |> 
+     summarise(id = first(id)) |> 
+     st_cast("POINT")
+  
+  # exchange centroids that are not on the nodes with new created from the intersection
+  centroids_sf <- data.frame(centroids_lyr[-check_centroids_2$ID,]) |> 
+     full_join(data.frame(centroids_inter_sf[check_centroids_2$ID,])) |> 
+     arrange(id) |> 
+     st_as_sf() 
+
+  trans_lyr <- gdistance::transition(1/raster::raster(circ_map_utm_inv), mean, directions = 8, symm=F)
+  
+  lcp_list <- lapply(1:nrow(centroids_sf), function(j){
+
+    # loop over all centroids
+    if(j != nrow(centroids_sf)) {
+      
+      # Hypothetical distance from the first two ships:
+      paths <- gdistance::shortestPath(trans_lyr, 
+                               as(centroids_sf[j,], "Spatial"), 
+                               as(centroids_sf[-c(1:j),], "Spatial"), 
+                               output = "SpatialLines")
+      
+      # make it sf
+      paths_sf <- paths |> 
+        as("sf")
+      
+      # add the length of each line
+      paths_sf$len <- st_length(paths_sf) |> as.numeric()
+      
+      # set crs
+      st_crs(paths_sf) <- st_crs(centroids_sf)
+      
+      # remove zero length lines and make all to single lines
+      paths_sf2 <- dplyr::filter(paths_sf, len > 0)
+      paths_sf3 <- st_cast(st_cast(paths_sf2), "LINESTRING")
+      paths_sf4 <- st_union(paths_sf3, by_feature = FALSE )
+      paths_sf5 <- st_cast(st_cast(paths_sf4), "LINESTRING")
+      
+      paths_sf5 <- st_cast(st_sf(paths_sf5), "LINESTRING")
+      
+      # custom clipping function    
+      st_erase = function(x, y) st_difference(x, st_union(st_combine(y)))
+      
+      # remove lines inside all nodes     
+       paths_sf_no_nodes_uni_buf <- st_erase(paths_sf5, nodes_all |>
+                                               st_transform(st_crs(paths_sf)))
+       
+      # make all to single lines again
+      paths_sf_no_nodes_uni_buf_l <- st_cast(st_sf(paths_sf_no_nodes_uni_buf), "LINESTRING")
+      
+      return(paths_sf_no_nodes_uni_buf_l)
+      
+    }
+  }
+  )
+  
+  # combine all shortest paths
+  shortest_paths <- do.call(bind_rows, lcp_list)
+  
+  # add length again
+  shortest_paths$len <- st_length(shortest_paths)
+  
+  shortest_paths_2 <- shortest_paths |> 
+    group_by(len) |> 
+    mutate(id = cur_group_id())
+
+ 
+    shortest_paths_uni <- unique(shortest_paths_2)
+    shortest_paths_start_end <-  do.call(bind_rows, lapply(1:nrow(shortest_paths_uni), function(x){
+    
+      path <- shortest_paths_uni[x,]
+    
+    path$start_x <- st_coordinates(path)[1,1] 
+    path$start_y <- st_coordinates(path)[1,2] 
+    path$end_x <- st_coordinates(path)[nrow(st_coordinates(path)),1] 
+    path$end_y <- st_coordinates(path)[nrow(st_coordinates(path)),2] 
+    
+    path$start_node <- as.numeric(as.character(st_intersects(
+                    st_as_sf(data.frame(path |> dplyr::select(start_x, start_y)),
+                            coords = c("start_x", "start_y"),
+                            crs = st_crs(path)),
+                    nodes_all |> st_transform(st_crs(path)))))
+    
+    path$end_node <- as.numeric(as.character(st_intersects(
+                    st_as_sf(data.frame(path |> dplyr::select(end_x, end_y)),
+                            coords = c("end_x", "end_y"),
+                            crs = st_crs(path)),
+                    nodes_all |> st_transform(st_crs(path)))))
+    
+    
+    path_2 <- path |> 
+      mutate(start_end = paste(start_node, end_node, sep = "_"))
+    
+    return(path_2)
+    
+    }))
+  
+    shortest_paths_start_end_sub <- shortest_paths_start_end |> 
+      drop_na(start_node, end_node) |> 
+      filter(!start_node %in% end_node) |> 
+      distinct(start_end, .keep_all = TRUE)
+    
+
+  st_write(shortest_paths_start_end_sub,
+         dsn = here("data", "processed", "lcp_2050", paste0("lcp_",i,"_2050.gpkg")))
+
+ }
+
+```
+
+## lcp 2080
+
+```{r}
+nodes_2080_l <- list.files(here::here("data", "processed", "node_layers", "nodes_2080"),
+                        pattern = ".gpkg",
+                        full.names = TRUE)
+
+circ_2080_l <- list.files(here::here("data", "processed", "circuitscape_2080"),
+                        pattern = "cum_curmap.asc$",
+                        full.names = TRUE,
+                        recursive = TRUE)
+
+for(i in c(5, 49)){
+  
+  # nodes layer respective species
+  nodes_lyr <- st_read(nodes_2080_l[str_detect(nodes_2080_l, pattern = paste0("species_", i, ".gpkg")) %in% TRUE])
+  
+  # circuitscape respective species
+  circ_map <- rast(circ_2080_l[str_detect(circ_2080_l, pattern = paste0("species_", i, "_")) %in% TRUE])
+  
+  # set zeros to NA
+  circ_map[which(values(circ_map)==0)]<-NA
+  
+  # reproject to metric projection
+  circ_map_utm <- terra::project(circ_map, as.character(st_crs(nodes_lyr))[[2]])
+  
+  # remove nodes from circuitscape map with a 1000m buffer
+  circ_map_utm_masked <- mask(circ_map_utm, 
+                              nodes_all |> 
+                                st_transform(as.character(st_crs(nodes_lyr))[[2]]) |> # transform to utm
+                                st_buffer(1000), # add buffer to avoid edge effects
+                              inverse = T)
+  
+  # get maximum value outside of protected areas
+  max_circ <- max(values(circ_map_utm_masked),na.rm = T) 
+  
+  circ_map_utm_max <-   circ_map_utm
+  
+  # set values inside protected areas to max values from outside
+  circ_map_utm_max[which(values(circ_map_utm)>=max_circ)] <- max_circ 
+  
+  # invert the circuitscape map as preparation for the least cost path
+  circ_map_utm_inv <- (max(values(circ_map_utm_max),na.rm=T)+1)-circ_map_utm_max 
+  
+  # centroids from nodes layer
+  centroids_lyr <- st_centroid(nodes_lyr |> arrange(id))
+   
+  # check if nodes layer are laying outside of nodes layer 
+  check_centroids <- extract(circ_map_utm_inv, centroids_lyr, inside = TRUE)
+  
+  # get centroids that are outside of their nodes 
+  check_centroids_2 <- check_centroids[which(is.na(check_centroids)[,2] == TRUE),]
+   
+  # create a raster from circuitscape map in higher resolution to exchange them with centroids that are 
+  # outside of their node
+  centroid_ras <- terra::rasterize(nodes_all, circ_map_utm_inv |> disagg(10), field = "id")
+  
+  # transform to polygons 
+  centroid_for_change <- circ_map_utm_inv |> 
+     terra::as.polygons() |> 
+     st_as_sf() 
+  
+  # intersect to get only areas covered by nodes 
+  centroid_inter <- st_intersection(nodes_lyr, centroid_for_change) 
+   
+  # get centroids of intersected layers
+  centroids_inter_sf <- st_centroid(centroid_inter) |> 
+     group_by(id) |> 
+     summarise(id = first(id)) |> 
+     st_cast("POINT")
+  
+  # exchange centroids that are not on the nodes with new created from the intersection
+  centroids_sf <- data.frame(centroids_lyr[-check_centroids_2$ID,]) |> 
+     full_join(data.frame(centroids_inter_sf[check_centroids_2$ID,])) |> 
+     arrange(id) |> 
+     st_as_sf() 
+
+  trans_lyr <- gdistance::transition(1/raster::raster(circ_map_utm_inv), mean, directions = 8, symm=F)
+  
+  lcp_list <- lapply(1:nrow(centroids_sf), function(j){
+
+    # loop over all centroids
+    if(j != nrow(centroids_sf)) {
+      
+      # Hypothetical distance from the first two ships:
+      paths <- gdistance::shortestPath(trans_lyr, 
+                               as(centroids_sf[j,], "Spatial"), 
+                               as(centroids_sf[-c(1:j),], "Spatial"), 
+                               output = "SpatialLines")
+      
+      # make it sf
+      paths_sf <- paths |> 
+        as("sf")
+      
+      # add the length of each line
+      paths_sf$len <- st_length(paths_sf) |> as.numeric()
+      
+      # set crs
+      st_crs(paths_sf) <- st_crs(centroids_sf)
+      
+      # remove zero length lines and make all to single lines
+      paths_sf2 <- dplyr::filter(paths_sf, len > 0)
+      paths_sf3 <- st_cast(st_cast(paths_sf2), "LINESTRING")
+      paths_sf4 <- st_union(paths_sf3, by_feature = FALSE )
+      paths_sf5 <- st_cast(st_cast(paths_sf4), "LINESTRING")
+      
+      paths_sf5 <- st_cast(st_sf(paths_sf5), "LINESTRING")
+
+      #custom clipping function
+      st_erase = function(x, y) st_difference(x, st_union(st_combine(y)))
+
+      # remove lines inside all nodes
+       paths_sf_no_nodes_uni_buf <- st_erase(paths_sf5, nodes_all |>
+                                               st_transform(st_crs(paths_sf)) )
+
+      # make all to single lines again
+      paths_sf_no_nodes_uni_buf_l <- st_cast(st_sf(paths_sf_no_nodes_uni_buf), "LINESTRING")
+      
+      return(paths_sf5)
+      
+    }
+  }
+  )
+  
+  # combine all shortest paths
+  shortest_paths <- do.call(bind_rows, lcp_list)
+  
+  # add length again
+  shortest_paths$len <- st_length(shortest_paths)
+  
+  # shortest_paths_no_nodes <- st_intersection(shortest_paths, nodes_lyr|>
+  #                                              st_transform(st_crs(shortest_paths))|>
+  #                                            st_buffer(1500) )
+  # # 
+  # library(tmap)
+  # tmap_mode("view")
+  # 
+  #tm_shape(circ_map_utm_inv) + tm_raster() +
+  # tm_shape(shortest_paths_uni |> filter(id %in% 44)) + tm_lines() +
+  #   tm_shape(nodes_lyr) + tm_polygons()
+  #   
+  # 
+  # 
+  shortest_paths_2 <- shortest_paths |> 
+    group_by(len) |> 
+    mutate(id = cur_group_id())
+
+ 
+    shortest_paths_uni <- unique(shortest_paths_2)
+    shortest_paths_uni$len <- as.numeric(st_length(shortest_paths_uni))
+    shortest_paths_start_end <-  do.call(bind_rows, lapply(1:nrow(shortest_paths_uni), function(x){
+    
+      path <- shortest_paths_uni[x,]
+    
+    path$start_x <- st_coordinates(path)[1,1] 
+    path$start_y <- st_coordinates(path)[1,2] 
+    path$end_x <- st_coordinates(path)[nrow(st_coordinates(path)),1] 
+    path$end_y <- st_coordinates(path)[nrow(st_coordinates(path)),2] 
+    
+    path$start_node <- as.numeric(as.character(st_intersects(
+                    st_as_sf(data.frame(path |> dplyr::select(start_x, start_y)),
+                            coords = c("start_x", "start_y"),
+                            crs = st_crs(path)),
+                    nodes_all |> st_transform(st_crs(path)))))
+    
+    path$end_node <- as.numeric(as.character(st_intersects(
+                    st_as_sf(data.frame(path |> dplyr::select(end_x, end_y)),
+                            coords = c("end_x", "end_y"),
+                            crs = st_crs(path)),
+                    nodes_all |> st_transform(st_crs(path)))))
+    
+    
+    path_2 <- path |> 
+      mutate(start_end = paste(start_node, end_node, sep = "_"))
+    
+    return(path_2)
+    
+    }))
+  
+    shortest_paths_start_end_sub <- shortest_paths_start_end |> 
+      drop_na(start_node, end_node) |> 
+      filter(!start_node %in% end_node) |> 
+      distinct(start_end, .keep_all = TRUE)
+    
+
+  st_write(shortest_paths_start_end_sub,
+         dsn = here("data", "processed", "lcp_2080", paste0("lcp_",i,"_2080.gpkg")))
+
+ }
+
+```
+
+# plots
+
+## 2020
+
+```{r}
+thresh_sp5 <-
+  rast(here("data", 
+            "raw", 
+            "threshold_maps", 
+            "threshold_maps_2020",
+            "sp5.tif"))
+
+dummy_ras_background <- thresh_sp5
+
+values(dummy_ras_background) <- ifelse(values(thresh_sp5) >= 0, "1", NA)
+
+
+
+lapply(c(5,49), function(x){
+  lcp <- st_read(here("data", "processed", "lcp_2020",
+                           paste0("lcp_", x, "_2020.gpkg")))|> st_transform(4326)
+  nodes <- st_read(here("data", "processed", "node_layers", "nodes_2020",
+                           paste0("nodes_2020_species_", x, ".gpkg")))|> st_transform(4326)
+
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(dummy_ras_background)) + 
+  scale_fill_manual(values = c(viridis(10)[1]), 
+    name = "", na.value = "transparent",
+    na.translate = F, guide = "none") + 
+      ggplot2::coord_sf(expand = FALSE) + 
+    ggnewscale::new_scale_fill() +
+  geom_sf(data = nodes, fill = "grey70", color = NA) +  
+  ggnewscale::new_scale_fill() +
+  geom_sf(data = lcp |> st_buffer(10000), fill = viridis::viridis(10)[10], color = NA) +  
+   ggtitle("Least Cost Path Maps 2020") + 
+  theme_void()
+
+ggsave(here("plots", "lcp_plots_2020" ,paste0("lcp_2020_sp", x,".png")), dpi = 300)
+
+})
+
+
+
+```
+
+## 2050
+
+```{r}
+lapply(c(5,49), function(x){
+  lcp <- st_read(here("data", "processed", "lcp_2050",
+                           paste0("lcp_", x, "_2050.gpkg")))|> st_transform(4326)
+  nodes <- st_read(here("data", "processed", "node_layers", "nodes_2050",
+                           paste0("nodes_2050_species_", x, ".gpkg")))|> st_transform(4326)
+
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(dummy_ras_background)) + 
+  scale_fill_manual(values = c(viridis(10)[1]), 
+    name = "", na.value = "transparent",
+    na.translate = F, guide = "none") + 
+      ggplot2::coord_sf(expand = FALSE) + 
+    ggnewscale::new_scale_fill() +
+  geom_sf(data = nodes, fill = "grey70", color = NA) +  
+  ggnewscale::new_scale_fill() +
+  geom_sf(data = lcp |> st_buffer(10000), fill = viridis::viridis(10)[10], color = NA) +  
+   ggtitle("Least Cost Path Maps 2050") + 
+  theme_void()
+
+ggsave(here("plots", "lcp_plots_2050" ,paste0("lcp_2050_sp", x,".png")), dpi = 300)
+
+})
+
+
+
+```
+
+## 2080
+
+```{r}
+
+lapply(c(5,49), function(x){
+  lcp <- st_read(here("data", "processed", "lcp_2080",
+                           paste0("lcp_", x, "_2080.gpkg")))|> st_transform(4326)
+  nodes <- st_read(here("data", "processed", "node_layers", "nodes_2080",
+                           paste0("nodes_2080_species_", x, ".gpkg")))|> st_transform(4326)
+
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(dummy_ras_background)) + 
+  scale_fill_manual(values = c(viridis(10)[1]), 
+    name = "", na.value = "transparent",
+    na.translate = F, guide = "none") + 
+      ggplot2::coord_sf(expand = FALSE) + 
+    ggnewscale::new_scale_fill() +
+  geom_sf(data = nodes, fill = "grey70", color = NA) +  
+  ggnewscale::new_scale_fill() +
+  geom_sf(data = lcp |> st_buffer(10000), fill = viridis::viridis(10)[10], color = NA) +  
+   ggtitle("Least Cost Path Maps 2080") + 
+  theme_void()
+
+ggsave(here("plots", "lcp_plots_2080" ,paste0("lcp_2080_sp", x,".png")), dpi = 300)
+
+})
+
+
+
+```
+
+
+
+
+</details>
+
+
+***
+
+<details><summary>Session Info</summary>
+
+```{r sessionInfo}
+## DO NOT REMOVE!
+Sys.time()
+#git2r::repository() ## uncomment if you are using GitHub
+sessionInfo()
+```
+
+</details>

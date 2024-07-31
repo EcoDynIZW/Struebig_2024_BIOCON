@@ -1,0 +1,1 @@
+201109281615   1     1     0bcs2011 LANDCOV_RESA = RESAMPLE (landcov50_fin, #, NEAREST)

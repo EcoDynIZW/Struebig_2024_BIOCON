@@ -1,0 +1,703 @@
+---
+title: "ciruitscape" 
+
+author:
+    - name: "Moritz Wenzler-Meya"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id: 
+    - name: "Stephanie Kramer-Schadt"
+      url: 
+      affiliation: Leibniz Institute for Zoo and Wildlife Research
+      affiliation_url: https://izw-berlin.de/en/
+      orcid_id:
+date: "`r Sys.Date()`"
+output: 
+    distill::distill_article:
+        highlight: kate      
+        code_folding: false  
+        toc: true            
+        toc_depth: 2        
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+                      dev = "ragg_png", fig.width = 9, fig.height = 6, dpi = 600, retina = 1)
+Sys.setlocale("LC_TIME", "C")
+```
+
+# Setup
+
+```{r packages}
+sapply(list("sf", "tidyverse", "terra", "here", "raster", 
+            "sp", "ggplot2", "ggnewscale", "viridis", "stars"), 
+       library, character.only = TRUE, logical.return = TRUE)
+```
+
+We provide code for the old "circuitscape 4" using python language and the recent "circuitscape 5" using julia. 
+
+We provide these two code parts because the code for "circuitscape 4" was prepared in 2017 is not running anymore on our new machines. 
+
+You can use the ".ini" files from "circuitscape 4" also for "circuitscape 5". See "circuitscape.org".
+
+
+# Circuitscape 4
+
+## path to circuitscape 4
+
+```{r}
+# Make a place holder for the cs_run.exe path
+# Don't forget the "Program Files" problem. Please install circuitscape 4 directly under "C:" on your machine. 
+# The folder "Program Files" has a space in the name and circuitscape may not run because of that.
+
+CS_exe <- "C:/Circuitscape/cs_run.exe"
+```
+
+
+## run circuitscape for hsi 2020
+```{r}
+spec_no_to_sim <- c(5,49)# c(1:81) # max 81  
+scenario <- 'hsi_2020' 
+scenario_out <- 'cs_2020'
+folder_simu <- "circuitscape_2020" 
+
+if (file.exists(here("data", "processed", folder_simu)) == FALSE) {
+  dir.create(here("data", "processed", folder_simu))
+} else {print('OBS Folder Exists!') }
+
+# loop for circuitscape 
+
+for (i in spec_no_to_sim){ 
+  if (file.exists(here("data", "processed", folder_simu, paste0(scenario_out, "_species_" ,i))) == FALSE) {
+  dir.create(here("data", "processed", folder_simu, paste0(scenario_out, "_species_" ,i)))
+  } else {print('OBS Folder Exists!') }
+  
+  ## output names
+  cs_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.out'))              # name of map
+  hsi_path <- here('data', 'raw', 'hsi_maps', scenario, paste0(scenario, '_species_' ,i, '.asc'))       # name of cost raster
+  ini_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.ini'))       # name of ini file
+  
+  # Make an .ini file
+  CS_ini <- c("[Calculation options]",
+              "low_memory_mode = False",
+              " parallelize = False",
+              "solver = cg+amg",
+              "print_timings = False",
+              "preemptive_memory_release = False",
+              "print_rusages = False",
+              "max_parallel = 0",
+              "[Output options]",
+              "set_focal_node_currents_to_zero = True",
+              "write_cur_maps = True",
+              "write_cum_cur_map_only = True",
+              "log_transform_maps = False",
+              "write_max_cur_maps = False",
+              "[Version]",
+              "version = 4.0.5",
+              "[Options for pairwise and one-to-all and all-to-one modes]",
+              "included_pairs_file = (Browse for a file with pairs to include or exclude)",
+              "use_included_pairs = False",
+              "[Habitat raster or graph]",
+              "habitat_map_is_resistances = False",
+              "[Circuitscape mode]",
+              "data_type = raster",
+              "scenario = all-to-one",
+              paste(c("point_file =",
+                      "habitat_file =",
+                      "output_file ="),
+                    paste(c(here("data", "raw", "node_123.asc"),
+                            hsi_path,
+                            cs_path),sep="/")))
+              
+              
+              # Write it to your working directory
+              writeLines(CS_ini, ini_path)
+              
+              # Make the CS run cmd
+              CS_run <- paste(CS_exe, ini_path) # Make the cmd
+              
+              # Run the command
+             system(CS_run)
+              
+}
+
+```
+
+## run circuitscape for hsi 2050
+
+```{r}
+spec_no_to_sim <- c(5,49)#c(1:81) # max 81  
+scenario <- 'hsi_2050' 
+scenario_out <- 'cs_2050'
+folder_simu <- "circuitscape_2050" 
+
+if (file.exists(here("data", "processed", folder_simu)) == FALSE) {
+  dir.create(here("data", "processed", folder_simu))
+} else {print('OBS Folder Exists!') }
+
+# loop for circuitscape 
+
+for (i in spec_no_to_sim){ 
+  if (file.exists(here("data", "processed", folder_simu, paste0(scenario_out, "_species_" ,i))) == FALSE) {
+  dir.create(here("data", "processed", folder_simu, paste0(scenario_out, "_species_" ,i)))
+  } else {print('OBS Folder Exists!') }
+  
+  ## output names
+  cs_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.out'))              # name of map
+  hsi_path <- here('data', 'raw', 'hsi_maps', scenario, paste0(scenario, '_species_' ,i, '.asc'))       # name of cost raster
+  ini_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.ini'))       # name of ini file
+  
+  # Make an .ini file
+  CS_ini <- c("[Calculation options]",
+              "low_memory_mode = False",
+              " parallelize = False",
+              "solver = cg+amg",
+              "print_timings = False",
+              "preemptive_memory_release = False",
+              "print_rusages = False",
+              "max_parallel = 0",
+              "[Output options]",
+              "set_focal_node_currents_to_zero = True",
+              "write_cur_maps = True",
+              "write_cum_cur_map_only = True",
+              "log_transform_maps = False",
+              "write_max_cur_maps = False",
+              "[Version]",
+              "version = 4.0.5",
+              "[Options for pairwise and one-to-all and all-to-one modes]",
+              "included_pairs_file = (Browse for a file with pairs to include or exclude)",
+              "use_included_pairs = False",
+              "[Habitat raster or graph]",
+              "habitat_map_is_resistances = False",
+              "[Circuitscape mode]",
+              "data_type = raster",
+              "scenario = all-to-one",
+              paste(c("point_file =",
+                      "habitat_file =",
+                      "output_file ="),
+                    paste(c(here("data", "raw", "node_123.asc"),
+                            hsi_path,
+                            cs_path),sep="/")))
+              
+              
+              # Write it to your working directory
+              writeLines(CS_ini, ini_path)
+              
+              # Make the CS run cmd
+              CS_run <- paste(CS_exe, ini_path) # Make the cmd
+              
+              # Run the command
+             system(CS_run)
+              
+}
+
+```
+
+
+## run circuitscape for hsi 2080
+
+```{r}
+spec_no_to_sim <- c(5,49)#c(1:81) # max 81  
+scenario <- 'hsi_2080' 
+scenario_out <- 'cs_2080'
+folder_simu <- "circuitscape_2080" 
+
+if (file.exists(here("data", "processed", folder_simu)) == FALSE) {
+  dir.create(here("data", "processed", folder_simu))
+} else {print('OBS Folder Exists!') }
+
+# loop for circuitscape 
+
+for (i in spec_no_to_sim){ 
+  if (file.exists(here("data", "processed", folder_simu, paste0(scenario_out, "_species_" ,i))) == FALSE) {
+  dir.create(here("data", "processed", folder_simu, paste0(scenario_out, "_species_" ,i)))
+  } else {print('OBS Folder Exists!') }
+  
+  ## output names
+  cs_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.out'))              # name of map
+  hsi_path <- here('data', 'raw', 'hsi_maps', scenario, paste0(scenario, '_species_' ,i, '.asc'))       # name of cost raster
+  ini_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.ini'))       # name of ini file
+  
+  # Make an .ini file
+  CS_ini <- c("[Calculation options]",
+              "low_memory_mode = False",
+              " parallelize = False",
+              "solver = cg+amg",
+              "print_timings = False",
+              "preemptive_memory_release = False",
+              "print_rusages = False",
+              "max_parallel = 0",
+              "[Output options]",
+              "set_focal_node_currents_to_zero = True",
+              "write_cur_maps = True",
+              "write_cum_cur_map_only = True",
+              "log_transform_maps = False",
+              "write_max_cur_maps = False",
+              "[Version]",
+              "version = 4.0.5",
+              "[Options for pairwise and one-to-all and all-to-one modes]",
+              "included_pairs_file = (Browse for a file with pairs to include or exclude)",
+              "use_included_pairs = False",
+              "[Habitat raster or graph]",
+              "habitat_map_is_resistances = False",
+              "[Circuitscape mode]",
+              "data_type = raster",
+              "scenario = all-to-one",
+              paste(c("point_file =",
+                      "habitat_file =",
+                      "output_file ="),
+                    paste(c(here("data", "raw", "node_123.asc"),
+                            hsi_path,
+                            cs_path),sep="/")))
+              
+              
+              # Write it to your working directory
+              writeLines(CS_ini, ini_path)
+              
+              # Make the CS run cmd
+              CS_run <- paste(CS_exe, ini_path) # Make the cmd
+              
+              # Run the command
+             system(CS_run)
+              
+}
+
+```
+
+# Circuitscape 5
+
+## prepare julia for circuitscape 5
+
+```{r}
+library(JuliaCall)
+#julia_setup(install = TRUE) # only first time
+#julia_install_package_if_needed("Circuitscape") # only first time
+julia_library("Circuitscape")
+```
+
+
+## run circuitscape for hsi 2020
+```{r}
+spec_no_to_sim <- c(5,49)# c(1:81) # max 81  
+scenario <- 'hsi_2020' 
+scenario_out <- 'cs_2020'
+folder_simu <- "circuitscape_2020" 
+
+if (file.exists(here("data", "processed", folder_simu)) == FALSE) {
+  dir.create(here("data", "processed", folder_simu))
+} else {print('OBS Folder Exists!') }
+
+# loop for circuitscape 
+
+for (i in spec_no_to_sim){ 
+  
+  if (file.exists(here("data", "processed", paste0(scenario_out, "_species_" ,i))) == FALSE) {
+  dir.create(here("data", "processed", paste0(scenario_out, "_species_" ,i)))
+  } else {print('OBS Folder Exists!') }
+  
+  ## output names
+  cs_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.out'))              # name of map
+  hsi_path <- here('data', 'raw', 'hsi_maps', scenario, paste0(scenario, '_species_' ,i, '.asc'))       # name of cost raster
+  ini_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.ini'))       # name of ini file
+  
+  # Make an .ini file
+  CS_ini_j <- c("[Options for advanced mode]",
+        "ground_file_is_resistances = False",
+        "source_file = (Browse for a current source file)",
+        "remove_src_or_gnd = keepall",
+        "ground_file = (Browse for a ground point file)",
+        "use_unit_currents = False",
+        "use_direct_grounds = False",
+        "[Calculation options]",
+        "parallelize = TRUE",
+        "low_memory_mode = False",
+        "solver = cg+amg",
+        "max_parallel = 20", # set the number of cores you want to use
+        "print_timings = False",
+        "[Options for pairwise and one-to-all and all-to-one modes]",
+        "included_pairs_file = None",
+        "use_included_pairs = False",
+        paste0("point_file = ", here("data", "raw", "node_123.asc")),
+        "[Output options]",
+        "write_cum_cur_map_only = True",
+        "log_transform_maps = False",
+         paste0("output_file = ", cs_path),
+        "write_max_cur_maps = False",
+        "write_volt_maps = False",
+        "set_null_currents_to_nodata = True",
+        "set_null_voltages_to_nodata = False",
+        "compress_grids = False",
+        "write_cur_maps = True",
+        "[Short circuit regions (aka polygons)]",
+        "use_polygons = False",
+        "polygon_file = (Browse for a current source file)",
+        "[Connection scheme for raster habitat data]",
+        "connect_four_neighbors_only = True",
+        "connect_using_avg_resistances = False",
+        "[Habitat raster or graph]",
+        paste0("habitat_file = ", hsi_path),
+        "habitat_map_is_resistances = False",
+        "[Options for one-to-all and all-to-one modes]",
+        "use_variable_source_strengths = False",
+        "variable_source_file = None",
+        "[Version]",
+        "version = 5.13.3",
+        "[Mask file]",
+        "use_mask = False",
+        "mask_file = None",
+        "[Circuitscape mode]",
+        "data_type = raster",
+        "scenario = all-to-one"
+              )
+  
+              # Write it to your working directory
+              writeLines(CS_ini_j, ini_path)
+              
+              # Run the command
+             julia_call("compute", ini_path)
+              
+}
+
+```
+
+## run circuitscape for hsi 2050
+
+```{r}
+spec_no_to_sim <- c(5,49)#c(1:81) # max 81  
+scenario <- 'hsi_2050' 
+scenario_out <- 'cs_2050'
+folder_simu <- "circuitscape_2050" 
+
+if (file.exists(here("data", "processed", folder_simu)) == FALSE) {
+  dir.create(here("data", "processed", folder_simu))
+} else {print('OBS Folder Exists!') }
+
+# loop for circuitscape 
+
+for (i in spec_no_to_sim){ 
+  
+  if (file.exists(here("data", "processed", paste0(scenario_out, "_species_" ,i))) == FALSE) {
+  dir.create(here("data", "processed", paste0(scenario_out, "_species_" ,i)))
+  } else {print('OBS Folder Exists!') }
+  
+  ## output names
+  cs_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.out'))              # name of map
+  hsi_path <- here('data', 'raw', 'hsi_maps', scenario, paste0(scenario, '_species_' ,i, '.asc'))       # name of cost raster
+  ini_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.ini'))       # name of ini file
+  
+  # Make an .ini file
+  CS_ini_j <- c("[Options for advanced mode]",
+        "ground_file_is_resistances = False",
+        "source_file = (Browse for a current source file)",
+        "remove_src_or_gnd = keepall",
+        "ground_file = (Browse for a ground point file)",
+        "use_unit_currents = False",
+        "use_direct_grounds = False",
+        "[Calculation options]",
+        "parallelize = TRUE",
+        "low_memory_mode = False",
+        "solver = cg+amg",
+        "max_parallel = 20", # set the number of cores you want to use
+        "print_timings = False",
+        "[Options for pairwise and one-to-all and all-to-one modes]",
+        "included_pairs_file = None",
+        "use_included_pairs = False",
+        paste0("point_file = ", here("data", "raw", "node_123.asc")),
+        "[Output options]",
+        "write_cum_cur_map_only = True",
+        "log_transform_maps = False",
+         paste0("output_file = ", cs_path),
+        "write_max_cur_maps = False",
+        "write_volt_maps = False",
+        "set_null_currents_to_nodata = True",
+        "set_null_voltages_to_nodata = False",
+        "compress_grids = False",
+        "write_cur_maps = True",
+        "[Short circuit regions (aka polygons)]",
+        "use_polygons = False",
+        "polygon_file = (Browse for a current source file)",
+        "[Connection scheme for raster habitat data]",
+        "connect_four_neighbors_only = True",
+        "connect_using_avg_resistances = False",
+        "[Habitat raster or graph]",
+        paste0("habitat_file = ", hsi_path),
+        "habitat_map_is_resistances = False",
+        "[Options for one-to-all and all-to-one modes]",
+        "use_variable_source_strengths = False",
+        "variable_source_file = None",
+        "[Version]",
+        "version = 5.13.3",
+        "[Mask file]",
+        "use_mask = False",
+        "mask_file = None",
+        "[Circuitscape mode]",
+        "data_type = raster",
+        "scenario = all-to-one"
+              )
+  
+              # Write it to your working directory
+              writeLines(CS_ini_j, ini_path)
+              
+              # Run the command
+             julia_call("compute", ini_path)
+              
+}
+
+```
+
+
+## run circuitscape for hsi 2080
+
+```{r}
+spec_no_to_sim <- c(5,49)#c(1:81) # max 81  
+scenario <- 'hsi_2080' 
+scenario_out <- 'cs_2080'
+folder_simu <- "circuitscape_2080" 
+
+if (file.exists(here("data", "processed", folder_simu)) == FALSE) {
+  dir.create(here("data", "processed", folder_simu))
+} else {print('OBS Folder Exists!') }
+
+# loop for circuitscape 
+
+for (i in spec_no_to_sim){ 
+  
+  if (file.exists(here("data", "processed", paste0(scenario_out, "_species_" ,i))) == FALSE) {
+  dir.create(here("data", "processed", paste0(scenario_out, "_species_" ,i)))
+  } else {print('OBS Folder Exists!') }
+  
+  ## output names
+  cs_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.out'))              # name of map
+  hsi_path <- here('data', 'raw', 'hsi_maps', scenario, paste0(scenario, '_species_' ,i, '.asc'))       # name of cost raster
+  ini_path <- here("data", "processed", 
+                      folder_simu, 
+                      paste0(scenario_out, "_species_" ,i), 
+                      paste0('circuitscape_ini_',scenario_out, "_species_" ,i, '.ini'))       # name of ini file
+  
+  # Make an .ini file
+  CS_ini_j <- c("[Options for advanced mode]",
+        "ground_file_is_resistances = False",
+        "source_file = (Browse for a current source file)",
+        "remove_src_or_gnd = keepall",
+        "ground_file = (Browse for a ground point file)",
+        "use_unit_currents = False",
+        "use_direct_grounds = False",
+        "[Calculation options]",
+        "parallelize = TRUE",
+        "low_memory_mode = False",
+        "solver = cg+amg",
+        "max_parallel = 20", # set the number of cores you want to use
+        "print_timings = False",
+        "[Options for pairwise and one-to-all and all-to-one modes]",
+        "included_pairs_file = None",
+        "use_included_pairs = False",
+        paste0("point_file = ", here("data", "raw", "node_123.asc")),
+        "[Output options]",
+        "write_cum_cur_map_only = True",
+        "log_transform_maps = False",
+         paste0("output_file = ", cs_path),
+        "write_max_cur_maps = False",
+        "write_volt_maps = False",
+        "set_null_currents_to_nodata = True",
+        "set_null_voltages_to_nodata = False",
+        "compress_grids = False",
+        "write_cur_maps = True",
+        "[Short circuit regions (aka polygons)]",
+        "use_polygons = False",
+        "polygon_file = (Browse for a current source file)",
+        "[Connection scheme for raster habitat data]",
+        "connect_four_neighbors_only = True",
+        "connect_using_avg_resistances = False",
+        "[Habitat raster or graph]",
+        paste0("habitat_file = ", hsi_path),
+        "habitat_map_is_resistances = False",
+        "[Options for one-to-all and all-to-one modes]",
+        "use_variable_source_strengths = False",
+        "variable_source_file = None",
+        "[Version]",
+        "version = 5.13.3",
+        "[Mask file]",
+        "use_mask = False",
+        "mask_file = None",
+        "[Circuitscape mode]",
+        "data_type = raster",
+        "scenario = all-to-one"
+              )
+  
+              # Write it to your working directory
+              writeLines(CS_ini_j, ini_path)
+              
+              # Run the command
+             julia_call("compute", ini_path)
+              
+}
+
+```
+
+# plot 
+
+## just for plotting
+
+```{r}
+nodes_all <- st_read(here("data", "raw", "nodes_all.gpkg"))
+
+ras_mask <- rast(here::here("data", "raw", "hsi_maps", "hsi_2020", "hsi_2020_species_5.asc"))
+```
+
+## load data back in and plot them directly
+
+### 2020
+```{r}
+circuitscape_2020_l <- lapply(c(5,49), function(x){
+  ras <- rast(list.files(
+    path = here::here("data",
+                      "processed",
+                      "circuitscape_2020"),
+    pattern = paste0(x, "_cum_curmap.asc$"),
+    full.names = TRUE,
+    recursive = TRUE
+  ))
+  ras_m <- mask(ras, nodes_all, inverse = TRUE)
+  ras_m_1000 <- (ras_m/max(values(ras_m), na.rm = T)*1000) |> mask(ras_mask)
+  
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(ras_m_1000)) + 
+  scale_fill_gradientn(
+     colours = viridis::viridis(10),
+     values = scales::rescale(quantile(values(ras_m_1000),
+                              probs = seq(0, 1, 0.1),
+                                       na.rm = T)),
+    na.value = "transparent", 
+    name = "") + 
+      ggplot2::coord_sf(expand = FALSE) +
+    ggnewscale::new_scale_fill() +
+  geom_sf(data = nodes_all, fill = "grey70", color = NA) +  
+   ggtitle("Circuitscape Maps 2020") + 
+  theme_void()
+
+ggsave(here("plots", "circuitscape_plots_2020", paste0("circuitscape_2020_sp", x,".png")), dpi = 300)
+})
+
+
+```
+
+### 2050
+```{r}
+circuitscape_2050_l <- lapply(c(5,49), function(x){
+  ras <- rast(list.files(
+    path = here::here("data",
+                      "processed",
+                      "circuitscape_2050"),
+    pattern = paste0(x, "_cum_curmap.asc$"),
+    full.names = TRUE,
+    recursive = TRUE
+  ))
+  ras_m <- mask(ras, nodes_all, inverse = TRUE)
+  ras_m_1000 <- (ras_m/max(values(ras_m), na.rm = T)*1000) |> mask(ras_mask)
+  
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(ras_m_1000)) + 
+  scale_fill_gradientn(
+     colours = viridis::viridis(10),
+     values = scales::rescale(quantile(values(ras_m_1000),
+                              probs = seq(0, 1, 0.1),
+                                       na.rm = T)),
+    na.value = "transparent", 
+    name = "") + 
+      ggplot2::coord_sf(expand = FALSE) +
+    ggnewscale::new_scale_fill() +
+  geom_sf(data = nodes_all, fill = "grey70", color = NA) +  
+   ggtitle("Circuitscape Maps 2050") + 
+  theme_void()
+
+ggsave(here("plots", "circuitscape_plots_2050", paste0("circuitscape_2050_sp", x,".png")), dpi = 300)
+})
+
+
+```
+
+### 2080
+```{r}
+circuitscape_2080_l <- lapply(c(5,49), function(x){
+  ras <- rast(list.files(
+    path = here::here("data",
+                      "processed",
+                      "circuitscape_2080"),
+    pattern = paste0(x, "_cum_curmap.asc$"),
+    full.names = TRUE,
+    recursive = TRUE
+  ))
+  ras_m <- mask(ras, nodes_all, inverse = TRUE)
+  ras_m_1000 <- (ras_m/max(values(ras_m), na.rm = T)*1000) |> mask(ras_mask)
+  
+  ggplot() + 
+  stars::geom_stars(data = stars::st_as_stars(ras_m_1000)) + 
+  scale_fill_gradientn(
+     colours = viridis::viridis(10),
+     values = scales::rescale(quantile(values(ras_m_1000),
+                              probs = seq(0, 1, 0.1),
+                                       na.rm = T)),
+    na.value = "transparent", 
+    name = "") + 
+      ggplot2::coord_sf(expand = FALSE) +
+    ggnewscale::new_scale_fill() +
+  geom_sf(data = nodes_all, fill = "grey70", color = NA) +  
+   ggtitle("Circuitscape Maps 2080") + 
+  theme_void()
+
+ggsave(here("plots", "circuitscape_plots_2080", paste0("circuitscape_2080_sp", x,".png")), dpi = 300)
+})
+
+
+```
+
+
+</details>
+
+
+***
+
+<details><summary>Session Info</summary>
+
+```{r sessionInfo}
+## DO NOT REMOVE!
+Sys.time()
+#git2r::repository() ## uncomment if you are using GitHub
+sessionInfo()
+```
+
+</details>
