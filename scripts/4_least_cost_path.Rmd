@@ -144,23 +144,27 @@ for(i in c(5, 49)){
       
       # remove zero length lines and make all to single lines
       paths_sf2 <- dplyr::filter(paths_sf, len > 0)
-      paths_sf3 <- st_cast(st_cast(paths_sf2), "LINESTRING")
-      paths_sf4 <- st_union(paths_sf3, by_feature = FALSE )
-      paths_sf5 <- st_cast(st_cast(paths_sf4), "LINESTRING")
-      
-      paths_sf5 <- st_cast(st_sf(paths_sf5), "LINESTRING")
       
       # custom clipping function    
-      st_erase = function(x, y) st_difference(x, st_union(st_combine(y)))
+      st_erase = function(x, y) st_difference(x, st_union(st_combine(y)) |> st_buffer(600))
       
-      # remove lines inside all nodes     
-       paths_sf_no_nodes_uni_buf <- st_erase(paths_sf5, nodes_all |>
-                                               st_transform(st_crs(paths_sf)))
+      # transform nodes all to utm
+       nodes_utm <- nodes_all |>
+         st_transform(st_crs(paths_sf)) 
+       
+      paths_dif <- do.call(rbind, lapply(1:nrow(paths_sf2), function(x){
+        st_erase(paths_sf2[x,], nodes_utm)
+      }))
+       
        
       # make all to single lines again
-      paths_sf_no_nodes_uni_buf_l <- st_cast(st_sf(paths_sf_no_nodes_uni_buf), "LINESTRING")
+      paths_sf_no_nodes_uni_buf_l <- st_cast(st_sf(paths_dif), "LINESTRING")
+
+      paths_unique <- unique(paths_sf_no_nodes_uni_buf_l)
       
-      return(paths_sf_no_nodes_uni_buf_l)
+      paths_unique$len <- st_length(paths_unique)
+      
+      return(paths_unique)
       
     }
   }
@@ -169,15 +173,11 @@ for(i in c(5, 49)){
   # combine all shortest paths
   shortest_paths <- do.call(bind_rows, lcp_list)
   
-  # add length again
-  shortest_paths$len <- st_length(shortest_paths)
-  
-  shortest_paths_2 <- shortest_paths |> 
-    group_by(len) |> 
-    mutate(id = cur_group_id())
-
+  # unique shortest paths
  
-    shortest_paths_uni <- unique(shortest_paths_2)
+    shortest_paths_uni <- unique(shortest_paths)
+    
+    # get start and end for each path
     shortest_paths_start_end <-  do.call(bind_rows, lapply(1:nrow(shortest_paths_uni), function(x){
     
       path <- shortest_paths_uni[x,]
@@ -190,14 +190,14 @@ for(i in c(5, 49)){
     path$start_node <- as.numeric(as.character(st_intersects(
                     st_as_sf(data.frame(path |> dplyr::select(start_x, start_y)),
                             coords = c("start_x", "start_y"),
-                            crs = st_crs(path)),
-                    nodes_all |> st_transform(st_crs(path)))))
+                            crs = st_crs(path)) |> st_buffer(1000),
+                    nodes_lyr)))
     
     path$end_node <- as.numeric(as.character(st_intersects(
                     st_as_sf(data.frame(path |> dplyr::select(end_x, end_y)),
                             coords = c("end_x", "end_y"),
-                            crs = st_crs(path)),
-                    nodes_all |> st_transform(st_crs(path)))))
+                            crs = st_crs(path)) |> st_buffer(1000),
+                    nodes_lyr)))
     
     
     path_2 <- path |> 
@@ -207,13 +207,13 @@ for(i in c(5, 49)){
     
     }))
   
+    # remove paths with same start and end node
     shortest_paths_start_end_sub <- shortest_paths_start_end |> 
-      drop_na(start_node, end_node) |> 
-      filter(!start_node %in% end_node) |> 
+      filter(!start_node == end_node) |> 
       distinct(start_end, .keep_all = TRUE)
 
   st_write(shortest_paths_start_end_sub,
-         dsn = here("data", "processed", "lcp_2020", paste0("lcp_",i,"_2020.gpkg")))
+         dsn = here("data", "processed", "lcp_2020", paste0("lcp_",i,"_2020_single_species_revision.gpkg")))
 
  }
 
@@ -304,7 +304,7 @@ for(i in c(5, 49)){
     # loop over all centroids
     if(j != nrow(centroids_sf)) {
       
-      # Hypothetical distance from the first two ships:
+      # calculate shortest path one to all without repeating the node that was already used
       paths <- gdistance::shortestPath(trans_lyr, 
                                as(centroids_sf[j,], "Spatial"), 
                                as(centroids_sf[-c(1:j),], "Spatial"), 
@@ -322,23 +322,27 @@ for(i in c(5, 49)){
       
       # remove zero length lines and make all to single lines
       paths_sf2 <- dplyr::filter(paths_sf, len > 0)
-      paths_sf3 <- st_cast(st_cast(paths_sf2), "LINESTRING")
-      paths_sf4 <- st_union(paths_sf3, by_feature = FALSE )
-      paths_sf5 <- st_cast(st_cast(paths_sf4), "LINESTRING")
-      
-      paths_sf5 <- st_cast(st_sf(paths_sf5), "LINESTRING")
       
       # custom clipping function    
-      st_erase = function(x, y) st_difference(x, st_union(st_combine(y)))
+      st_erase = function(x, y) st_difference(x, st_union(st_combine(y)) |> st_buffer(600))
       
-      # remove lines inside all nodes     
-       paths_sf_no_nodes_uni_buf <- st_erase(paths_sf5, nodes_all |>
-                                               st_transform(st_crs(paths_sf)))
+      # transform nodes all to utm
+       nodes_utm <- nodes_all |>
+         st_transform(st_crs(paths_sf)) 
+       
+      paths_dif <- do.call(rbind, lapply(1:nrow(paths_sf2), function(x){
+        st_erase(paths_sf2[x,], nodes_utm)
+      }))
+       
        
       # make all to single lines again
-      paths_sf_no_nodes_uni_buf_l <- st_cast(st_sf(paths_sf_no_nodes_uni_buf), "LINESTRING")
+      paths_sf_no_nodes_uni_buf_l <- st_cast(st_sf(paths_dif), "LINESTRING")
+
+      paths_unique <- unique(paths_sf_no_nodes_uni_buf_l)
       
-      return(paths_sf_no_nodes_uni_buf_l)
+      paths_unique$len <- st_length(paths_unique)
+      
+      return(paths_unique)
       
     }
   }
@@ -347,15 +351,11 @@ for(i in c(5, 49)){
   # combine all shortest paths
   shortest_paths <- do.call(bind_rows, lcp_list)
   
-  # add length again
-  shortest_paths$len <- st_length(shortest_paths)
-  
-  shortest_paths_2 <- shortest_paths |> 
-    group_by(len) |> 
-    mutate(id = cur_group_id())
-
+  # unique shortest paths
  
-    shortest_paths_uni <- unique(shortest_paths_2)
+    shortest_paths_uni <- unique(shortest_paths)
+    
+    # get start and end for each path
     shortest_paths_start_end <-  do.call(bind_rows, lapply(1:nrow(shortest_paths_uni), function(x){
     
       path <- shortest_paths_uni[x,]
@@ -368,14 +368,14 @@ for(i in c(5, 49)){
     path$start_node <- as.numeric(as.character(st_intersects(
                     st_as_sf(data.frame(path |> dplyr::select(start_x, start_y)),
                             coords = c("start_x", "start_y"),
-                            crs = st_crs(path)),
-                    nodes_all |> st_transform(st_crs(path)))))
+                            crs = st_crs(path)) |> st_buffer(1000),
+                    nodes_lyr)))
     
     path$end_node <- as.numeric(as.character(st_intersects(
                     st_as_sf(data.frame(path |> dplyr::select(end_x, end_y)),
                             coords = c("end_x", "end_y"),
-                            crs = st_crs(path)),
-                    nodes_all |> st_transform(st_crs(path)))))
+                            crs = st_crs(path)) |> st_buffer(1000),
+                    nodes_lyr)))
     
     
     path_2 <- path |> 
@@ -385,14 +385,14 @@ for(i in c(5, 49)){
     
     }))
   
+    # remove paths with same start and end node
     shortest_paths_start_end_sub <- shortest_paths_start_end |> 
-      drop_na(start_node, end_node) |> 
-      filter(!start_node %in% end_node) |> 
+      filter(!start_node == end_node) |> 
       distinct(start_end, .keep_all = TRUE)
-    
 
   st_write(shortest_paths_start_end_sub,
-         dsn = here("data", "processed", "lcp_2050", paste0("lcp_",i,"_2050.gpkg")))
+         dsn = here("data", "processed", "lcp_2050", paste0("lcp_",i,"_2050_single_species_revision.gpkg")),
+         delete_layer = TRUE)
 
  }
 
@@ -482,7 +482,7 @@ for(i in c(5, 49)){
     # loop over all centroids
     if(j != nrow(centroids_sf)) {
       
-      # Hypothetical distance from the first two ships:
+      # calculate shortest path one to all without repeating the node that was already used
       paths <- gdistance::shortestPath(trans_lyr, 
                                as(centroids_sf[j,], "Spatial"), 
                                as(centroids_sf[-c(1:j),], "Spatial"), 
@@ -500,23 +500,27 @@ for(i in c(5, 49)){
       
       # remove zero length lines and make all to single lines
       paths_sf2 <- dplyr::filter(paths_sf, len > 0)
-      paths_sf3 <- st_cast(st_cast(paths_sf2), "LINESTRING")
-      paths_sf4 <- st_union(paths_sf3, by_feature = FALSE )
-      paths_sf5 <- st_cast(st_cast(paths_sf4), "LINESTRING")
       
-      paths_sf5 <- st_cast(st_sf(paths_sf5), "LINESTRING")
-
-      #custom clipping function
-      st_erase = function(x, y) st_difference(x, st_union(st_combine(y)))
-
-      # remove lines inside all nodes
-       paths_sf_no_nodes_uni_buf <- st_erase(paths_sf5, nodes_all |>
-                                               st_transform(st_crs(paths_sf)) )
-
+      # custom clipping function    
+      st_erase = function(x, y) st_difference(x, st_union(st_combine(y)) |> st_buffer(600))
+      
+      # transform nodes all to utm
+       nodes_utm <- nodes_all |>
+         st_transform(st_crs(paths_sf)) 
+       
+      paths_dif <- do.call(rbind, lapply(1:nrow(paths_sf2), function(x){
+        st_erase(paths_sf2[x,], nodes_utm)
+      }))
+       
+       
       # make all to single lines again
-      paths_sf_no_nodes_uni_buf_l <- st_cast(st_sf(paths_sf_no_nodes_uni_buf), "LINESTRING")
+      paths_sf_no_nodes_uni_buf_l <- st_cast(st_sf(paths_dif), "LINESTRING")
+
+      paths_unique <- unique(paths_sf_no_nodes_uni_buf_l)
       
-      return(paths_sf5)
+      paths_unique$len <- st_length(paths_unique)
+      
+      return(paths_unique)
       
     }
   }
@@ -525,29 +529,11 @@ for(i in c(5, 49)){
   # combine all shortest paths
   shortest_paths <- do.call(bind_rows, lcp_list)
   
-  # add length again
-  shortest_paths$len <- st_length(shortest_paths)
-  
-  # shortest_paths_no_nodes <- st_intersection(shortest_paths, nodes_lyr|>
-  #                                              st_transform(st_crs(shortest_paths))|>
-  #                                            st_buffer(1500) )
-  # # 
-  # library(tmap)
-  # tmap_mode("view")
-  # 
-  #tm_shape(circ_map_utm_inv) + tm_raster() +
-  # tm_shape(shortest_paths_uni |> filter(id %in% 44)) + tm_lines() +
-  #   tm_shape(nodes_lyr) + tm_polygons()
-  #   
-  # 
-  # 
-  shortest_paths_2 <- shortest_paths |> 
-    group_by(len) |> 
-    mutate(id = cur_group_id())
-
+  # unique shortest paths
  
-    shortest_paths_uni <- unique(shortest_paths_2)
-    shortest_paths_uni$len <- as.numeric(st_length(shortest_paths_uni))
+    shortest_paths_uni <- unique(shortest_paths)
+    
+    # get start and end for each path
     shortest_paths_start_end <-  do.call(bind_rows, lapply(1:nrow(shortest_paths_uni), function(x){
     
       path <- shortest_paths_uni[x,]
@@ -560,14 +546,14 @@ for(i in c(5, 49)){
     path$start_node <- as.numeric(as.character(st_intersects(
                     st_as_sf(data.frame(path |> dplyr::select(start_x, start_y)),
                             coords = c("start_x", "start_y"),
-                            crs = st_crs(path)),
-                    nodes_all |> st_transform(st_crs(path)))))
+                            crs = st_crs(path)) |> st_buffer(1000),
+                    nodes_lyr)))
     
     path$end_node <- as.numeric(as.character(st_intersects(
                     st_as_sf(data.frame(path |> dplyr::select(end_x, end_y)),
                             coords = c("end_x", "end_y"),
-                            crs = st_crs(path)),
-                    nodes_all |> st_transform(st_crs(path)))))
+                            crs = st_crs(path)) |> st_buffer(1000),
+                    nodes_lyr)))
     
     
     path_2 <- path |> 
@@ -577,20 +563,22 @@ for(i in c(5, 49)){
     
     }))
   
+    # remove paths with same start and end node
     shortest_paths_start_end_sub <- shortest_paths_start_end |> 
-      drop_na(start_node, end_node) |> 
-      filter(!start_node %in% end_node) |> 
+      filter(!start_node == end_node) |> 
       distinct(start_end, .keep_all = TRUE)
-    
 
   st_write(shortest_paths_start_end_sub,
-         dsn = here("data", "processed", "lcp_2080", paste0("lcp_",i,"_2080.gpkg")))
+         dsn = here("data", "processed", "lcp_2080", paste0("lcp_",i,"_2080_single_species_revision.gpkg")),
+         delete_layer = TRUE)
 
  }
 
 ```
 
 # plots
+
+# note: we used the lcps from our originally made run. The lcps with the endings "_single_species_revision.gpkg" are slightly different and may differ on different machines.
 
 ## 2020
 

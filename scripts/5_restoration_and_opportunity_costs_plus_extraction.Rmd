@@ -395,11 +395,11 @@ circuitscape_2080_l <- lapply(list.files(
 ```
 
 
-## extract all values
+## extract all values to each species least cost path
 
 ### 2020
 ```{r}
-extract_2020 <- lapply(c(5,49), function(x){
+extract_2020 <- lapply(c(5,49), function(x){ # c(1:81)
   lcp <- st_read(lcp_2020_l[str_detect(lcp_2020_l, pattern = paste0(x, "_2020.gpkg$")) %in% TRUE])
   # restoration costs
   ## 2020
@@ -687,6 +687,7 @@ extract_2020 <- lapply(c(5,49), function(x){
   
 })
 
+# joint least cost paths of all species for 2020
 #st_write(extract_2020, here("data", "processed", "lcp_join", "lcp_join_2020.gpkg")) # not run
 st_write(extract_2020, here("data", "processed", "lcp_join", "lcp_join_2020_species_5_49.gpkg"))
 
@@ -696,7 +697,7 @@ st_write(extract_2020, here("data", "processed", "lcp_join", "lcp_join_2020_spec
 ### 2050
 
 ```{r}
-extract_2050 <- lapply(c(5,49), function(x){
+extract_2050 <- lapply(c(5,49), function(x){ # c(1:81)
   lcp <- st_read(lcp_2050_l[str_detect(lcp_2050_l, pattern = paste0(x, "_2050.gpkg$")) %in% TRUE])
   # restoration costs
   ## 2020
@@ -984,7 +985,7 @@ extract_2050 <- lapply(c(5,49), function(x){
   
 })
 
-
+# joint least cost paths of all species for 2050
 #st_write(extract_2050, here("data", "processed", "lcp_join", "lcp_join_2050.gpkg")) # not run
 st_write(extract_2050, here("data", "processed", "lcp_join", "lcp_join_2050_species_5_49.gpkg"))
 
@@ -993,7 +994,7 @@ st_write(extract_2050, here("data", "processed", "lcp_join", "lcp_join_2050_spec
 ### 2080
 
 ```{r}
-extract_2080 <- lapply(c(5,49), function(x){
+extract_2080 <- lapply(c(5,49), function(x){ # c(1:81)
   lcp <- st_read(lcp_2080_l[str_detect(lcp_2080_l, pattern = paste0(x, "_2080.gpkg$")) %in% TRUE])
   # restoration costs
   ## 2020
@@ -1281,12 +1282,14 @@ extract_2080 <- lapply(c(5,49), function(x){
   
 })
 
+# joint least cost paths of all species for 2080
 #st_write(extract_2080, here("data", "processed", "lcp_join", "lcp_join_2080.gpkg")) # not run
 st_write(extract_2080, here("data", "processed", "lcp_join", "lcp_join_2080_species_5_49.gpkg"))
 
 
 ```
 
+These data sets were then filtered with the 75% cut off procedure in a GIS. Script 6 starts with the 75% cut off data sets per time slice. 
 
 </details>
 

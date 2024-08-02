@@ -2,17 +2,17 @@
 
 <br>
 
-The repository provides the scripts and exemplarily data of two species (no. 5 *Diplogale hosei*, a civet losing habitat, and no. 49 *Pteropus vampyrus*, a bat species gaining habitat in the future) to follow the workflow steps provided in Fig. 1 of Struebig et al. (in revision). A detailed description is also available in the supplementary material. The structure of the repository, i.e. how data, output and scripts are stored, follows the [d6-package] (https://github.com/EcoDynIZW/d6). 
+The repository provides the scripts and exemplary data of two species (no. 5 *Diplogale hosei*, a civet losing habitat, and no. 49 *Pteropus vampyrus*, a bat species gaining habitat in the future) to follow the workflow steps provided in Fig. 1 of Struebig et al. (in revision). A detailed description is also available in the supplementary material. The structure of the repository, i.e. how data, output and scripts are stored, follows the [d6-package] (https://github.com/EcoDynIZW/d6). 
 <br>
 
-**data**: contains the folders raw and processed. Under *raw*, spatial layers of the species HSI and threshold maps as well as land cover layers and the protected areas (PAs) are stored. In *cost_layers*, helper layers like the concession map are used to create the restoration cost layers (e.g., script 5 and Table S2); the opportunity cost layer was provided by Runting et al. (2105 NatComms). *Processed* contains the output of spatial operations, such as the circuitscape runs, the least-cost-path runs, the node layers per species and the restoration costs per time slice.
+**data**: contains the folders raw and processed. Under *raw*, spatial layers of the species HSI and threshold maps as well as land cover layers and the protected areas (PAs) are stored. In *cost_layers*, helper layers like the concession map are used to create the restoration cost layers (e.g., script 5 and Table S2); the opportunity cost layer was provided by Runting et al. (2015 NatComms). *Processed* contains the output of spatial operations, such as the circuitscape runs, the least-cost-path runs, the node layers per species and the restoration costs per time slice.
 <br>
 **plots**: contains plots created for the two species mentioned above.
 <br>
 **scripts**: contains numbered scripts representing the code for the different steps shown in Fig. 1.
 <br>
 
-Note that the scripting was started in 2016 under older versions of R. It was built on no longer supported packages such as `raster`, `rgeos`, `rgdal` and `sp`, and the original code does therefore not run any more. Where possible, we adjusted the code to `terra` and `sf`, but results might differ. In the code, we had to make several adjustments to area size, as some maps were provided in true area projected coordinate reference systems (CRS) like UTM, or sometimes in angular-true geographic CRS like WGS84, where a raster cell size corresponds to 930 * 930 m, and not 1 km2. 
+Note that the scripting was started in 2016 under older versions of R. It was built on no longer supported packages such as `raster`, `rgeos`, `rgdal` and `sp`, and the original code does therefore not run any more. Where possible, we adjusted the code to `terra` and `sf`, but results might differ. In the code, we had to make several adjustments to area size, as some maps were provided in true area projected coordinate reference systems (CRS) like UTM, or sometimes in angular-true geographic CRS like WGS84, where a raster cell size corresponds to 930 * 930 m, and not 1 km2. We therefore calculated areas in WGS84 by counting raster cells and multiplying them by 0.865.
 The numbered scripts contain the following codes for the steps:
 
 <br>
@@ -28,7 +28,7 @@ In the previous work (Struebig et al. 15 CurrBiol), binary (0 and 1 values only)
 <br>
 
 ### 3) circuitscape
-The script creates all folders for the output, the circuitscape initialisation (ini) file and calls the circuitscape.exe. We provide the code also for the new Julia-language version. Circuitscape was run for all species and all nodes per time slice and layers stored. The HSI maps were used as conductance layers, and the PAs as nodes.
+The script creates all folders for the output, the circuitscape initialisation (ini) file and calls the circuitscape.exe. We provide the code also for the new Julia-language version because circuitscape 4 (python version) may not work anymore. Circuitscape was run for all species and all nodes per time slice and current flow layers were stored. The HSI maps were used as conductance layers, and the PAs as nodes.
 
 <br>
 
@@ -38,7 +38,7 @@ Nodes per species and time slice are loaded, and per node a centroid was calcula
 <br>
 
 ### 5 restoration and opportunity cost extracts
-The maps for restoration costs were calculated for each time slice, and the LCP lines intersected with the restoration costs maps, the binary forest maps (to later calculate the % of forest for each LCP), circuitscape layers, the binary threshold maps (to later calculate the % of suitable habitat crossed by the LCP for each species) and the habitat suitability maps of each species for each time slice, and the information stored to each path. This dataset was then used to select the 75% species cut-off LCPs in a GIS.
+The maps for restoration costs were calculated for each time slice, and the LCP lines intersected with the restoration costs maps, the binary forest maps (to later calculate the % of forest for each LCP), circuitscape layers, the binary threshold maps (to later calculate the % of suitable habitat crossed by the LCP for each species) and the habitat suitability maps of each species for each time slice, and the information together with opportunity costs stored to each path. This data set was then used to select the 75% species cut-off LCPs in a GIS.
 
 <br>
 
